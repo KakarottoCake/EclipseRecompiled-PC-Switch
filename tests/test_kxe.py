@@ -20,6 +20,7 @@ from tools.kxe.format import (  # noqa: E402
     parse_kxe,
 )
 from tools.kxe.to_dol import make_dol  # noqa: E402
+from tools.kxe.combine_dol import combine_dol  # noqa: E402
 
 
 def make_kxe(relocations: list[tuple[int, int, int, int, int, int]], imports=()):
@@ -132,6 +133,51 @@ class KxeParserTests(unittest.TestCase):
         self.assertEqual(struct.unpack_from(">I", dol, 0x90)[0], 32)
         self.assertEqual(struct.unpack_from(">I", dol, 0xE0)[0], 0x81700000)
         self.assertEqual(struct.unpack_from(">I", dol, 0x100)[0], 0x81700008)
+
+    def test_combines_kxe_and_arena_trampoline_with_existing_dol(self):
+        base = bytearray(0x120)
+        struct.pack_into(">I", base, 0x00, 0x100)
+        struct.pack_into(">I", base, 0x48, 0x80003100)
+        struct.pack_into(">I", base, 0x90, 0x20)
+        struct.pack_into(">I", base, 0xE0, 0x80003100)
+        kxe = parse_kxe(make_kxe([]))
+        combined = combine_dol(base, kxe, 0x81700000, 0x81780000)
+        self.assertEqual(struct.unpack_from(">I", combined, 0xE0)[0], 0x81780000)
+        self.assertEqual(struct.unpack_from(">I", combined, 0x4C)[0], 0x81700000)
+        self.assertEqual(struct.unpack_from(">I", combined, 0x50)[0], 0x81780000)
+        trampoline_offset = struct.unpack_from(">I", combined, 0x08)[0]
+        words = struct.unpack_from(">8I", combined, trampoline_offset)
+        self.assertEqual(words[:3], (0x3D808170, 0x3D608000, 0x918B0034))
+        self.assertEqual(words[3:7], (0x3D808000, 0x618C3100, 0x7D8903A6, 0x4E800420))
+
+    def test_combined_dol_rejects_guest_overlap(self):
+        base = bytearray(0x120)
+        struct.pack_into(">I", base, 0x00, 0x100)
+        struct.pack_into(">I", base, 0x48, 0x81700000)
+        struct.pack_into(">I", base, 0x90, 0x20)
+        struct.pack_into(">I", base, 0xE0, 0x81700000)
+        with self.assertRaisesRegex(ValueError, "overlaps text"):
+            combine_dol(base, parse_kxe(make_kxe([])), 0x81700000, 0x80420000)
+
+    def test_combined_dol_replaces_dynamic_loader_with_bse_lifecycle(self):
+        base = bytearray(0x140)
+        struct.pack_into(">I", base, 0x00, 0x100)
+        struct.pack_into(">I", base, 0x48, 0x802A7440)
+        struct.pack_into(">I", base, 0x90, 0x40)
+        struct.pack_into(">I", base, 0xE0, 0x802A7440)
+        combined = combine_dol(
+            base,
+            parse_kxe(make_kxe([])),
+            0x81700000,
+            0x81780000,
+            lifecycle_hook_address=0x802A744C,
+            lifecycle_resume_address=0x802A7450,
+        )
+        hook = struct.unpack_from(">I", combined, 0x10C)[0]
+        self.assertEqual(hook, 0x494D8BD4)
+        shim_offset = struct.unpack_from(">I", combined, 0x08)[0]
+        context = struct.unpack_from(">5I", combined, shim_offset + 0x100)
+        self.assertEqual(context, (0, 0x81780060, 0, 0x81700000, 0))
 
 
 if __name__ == "__main__":

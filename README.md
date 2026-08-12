@@ -1,9 +1,10 @@
 # Eclipse Recompiled — PC & Nintendo Switch
 
 > [!IMPORTANT]
-> This fork is at the **bring-up stage**. The native Windows host and Eclipse
-> `main.dol` module now build, but Super Mario Eclipse is not playable through
-> it yet because its Kuribo/KXE modules still need native integration.
+> This fork is at the **bring-up stage**. The native Windows host now builds a
+> combined Eclipse `main.dol` + Better Sunshine Engine module, but Super Mario
+> Eclipse is not playable through it yet because its three dependent
+> Kuribo/KXE modules still need native linking and validation.
 > Nintendo Switch support is a later homebrew port.
 
 Eclipse Recompiled is an experimental native static-recompilation project for
@@ -39,8 +40,10 @@ See [the current technical status](docs/ECLIPSE_STATUS.md) for exactly what
 builds, what remains, and the one-command Windows preparation workflow.
 Contributors working on the blocker should also read
 [the KXE compatibility notes](docs/KXE_FORMAT.md), which document the new
-clean-room parser, the successful first BSE conversion, and the unresolved
-runtime export/linking work.
+clean-room parser, the integrated BSE lifecycle prototype, and the unresolved
+runtime export/linking work. The incomplete
+[Super Mario Sunshine decompilation](https://github.com/doldecomp/sms) is used
+as a readable research and symbol reference; it does not replace DolRecomp.
 
 ## Legal and project status
 
@@ -413,7 +416,8 @@ The recompilation path follows the public ExpansionPak ecosystem: DolRecomp,
 ModernGekko, ModernGekko-Template, RecompCore, and their contributors. Dolphin
 provides the compatibility-runtime foundation and Metal backend. The
 [doldecomp/sms](https://github.com/doldecomp/sms) project is used as a research
-reference. See [`docs/RESEARCH.md`](docs/RESEARCH.md) and
+reference, and ModernGekko's GXRuntime includes Aurora-derived compatibility
+work. See [`docs/RESEARCH.md`](docs/RESEARCH.md) and
 [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md) for pins and attribution.
 
 ## Legal

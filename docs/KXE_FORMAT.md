@@ -119,12 +119,21 @@ The current prototype performs the lowest-risk conversion in stages:
    order, including BSE constructor/export registration before dependents.
 7. Validate runtime patch writes, menus, stage loading, saving, and shutdown.
 
-Stage 4 now succeeds for Better Sunshine Engine at the experimental guest base
-`0x81700000`. Its 29 generated chunks also compile into a Windows x64 module
-that passes ModernGekko ABI inspection (ABI 3, entry `0x8170e314`, one code
-range, and 938 self-modifying-code ranges). That base is a conversion fixture,
-not yet a promise that the game's heap will leave the range free. Runtime
-memory ownership must be proven before it is used in a playable build.
+Stage 4 now succeeds for Better Sunshine Engine at guest base `0x81700000`.
+The current prototype combines it with Eclipse's DOL and a high-memory guest
+shim. The shim runs first at `0x81780000`, lowers ArenaHi to `0x81700000` before
+Sunshine clears its heap, and then jumps to the original entry point. This
+reserves roughly the same memory that dynamic Kuribo modules would consume.
+
+At the original Kuribo loader hook (`0x802a744c`), the shim calls BSE's real
+prologue at `0x8170e314`, records its exported name/address pairs, and resumes
+the game at `0x802a7450`. The dynamic kernel loader is therefore bypassed and
+the supported path contains one BSE initialization call.
+
+The combined Windows module passes ModernGekko ABI inspection: ABI 3, four
+code ranges, 1,620 self-modifying-code ranges, and 251 native chunks. A bounded
+30-second headless diagnostic stayed alive without a module, ABI, or immediate
+boot error. That is a bring-up result, not gameplay acceptance.
 
 After the normal Eclipse Windows preparation, reproduce the conversion with:
 
@@ -132,11 +141,17 @@ After the normal Eclipse Windows preparation, reproduce the conversion with:
 .\scripts\prepare-eclipse-kxe.ps1 -BuildNativeModule
 ```
 
+Build the integrated DOL+BSE prototype with:
+
+```powershell
+.\scripts\prepare-eclipse-combined.ps1
+```
+
 The first MSVC build can take several minutes because some generated C chunks
 are very large. All outputs are ignored private artifacts.
 
-The remaining hard boundary is BSE's runtime-registered export table. The KXE
-export section is absent, so dependent module imports cannot be statically
-resolved from the containers alone. We must either recover the exact shipped
-BSE export addresses through deterministic analysis or emulate its procedure
-registration during initialization and retain runtime import patching.
+The remaining hard boundary is turning the captured BSE export registry into
+the exact import map for Moveset, Mirror Mode, and Eclipse. Their KXE export
+sections are absent, so initialization order and name-based procedure lookup
+must still be reproduced before those modules can be added to the combined
+DOL.

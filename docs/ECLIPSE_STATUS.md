@@ -25,6 +25,14 @@ Last verified: August 12, 2026.
   inspector: ABI 3, entry `0x8170e314`, 1 code range, 938 SMC ranges, and 29
   chunk ranges. This proves the first KXE can enter the full native toolchain;
   it is not integrated into the game module yet.
+- A second prototype now combines the Eclipse DOL, relocated BSE, and a guest
+  lifecycle shim into one `GMSE04` DLL: ABI 3, 4 code ranges, 1,620 SMC ranges,
+  and 251 chunks. The shim reserves high memory before OS initialization,
+  bypasses the original dynamic Kuribo loader, invokes BSE once at the original
+  hook point, and captures BSE's runtime exports.
+- A bounded 30-second headless launch remained active with no immediate module,
+  ABI, or boot failure. Rendering/gameplay and BSE export capture still need
+  explicit acceptance; this is not a playable milestone.
 
 None of the private extraction, generated game code, or compiled game module
 is committed or distributable from this repository.
@@ -37,9 +45,8 @@ Engine, the moveset, mirror mode, and Eclipse itself. The Windows host and DOL
 module are ready, but the Kuribo/KXE layer has not yet been converted or
 reimplemented for the native runtime.
 
-The next concrete milestone is merging BSE's generated ranges into the GMSE04
-module and preserving its runtime export registration. The three dependent
-modules cannot be linked until their named BSE imports have exact addresses.
+The next concrete milestone is resolving the captured BSE exports and linking
+Moveset, Mirror Mode, and Super Mario Eclipse into the same reserved range.
 See [the KXE compatibility notes](KXE_FORMAT.md) for the verified format,
 conversion path, and remaining runtime boundary. A diagnostic DOL-only launch
 may fail; it is not presented as a playable build.
