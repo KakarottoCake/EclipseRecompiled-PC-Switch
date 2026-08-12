@@ -119,14 +119,14 @@ The current prototype performs the lowest-risk conversion in stages:
    order, including BSE constructor/export registration before dependents.
 7. Validate runtime patch writes, menus, stage loading, saving, and shutdown.
 
-Stage 4 now succeeds for Better Sunshine Engine at guest base `0x81700000`.
+Stage 4 now succeeds for Better Sunshine Engine at guest base `0x81600000`.
 The current prototype combines it with Eclipse's DOL and a high-memory guest
-shim. The shim runs first at `0x81780000`, lowers ArenaHi to `0x81700000` before
+shim. The shim runs first at `0x817f0000`, lowers ArenaHi to `0x81600000` before
 Sunshine clears its heap, and then jumps to the original entry point. This
 reserves roughly the same memory that dynamic Kuribo modules would consume.
 
 At the original Kuribo loader hook (`0x802a744c`), the shim calls BSE's real
-prologue at `0x8170e314`, records its exported name/address pairs, and resumes
+prologue at `0x8160e314`, records its exported name/address pairs, and resumes
 the game at `0x802a7450`. The dynamic kernel loader is therefore bypassed and
 the supported path contains one BSE initialization call.
 
@@ -150,8 +150,14 @@ Build the integrated DOL+BSE prototype with:
 The first MSVC build can take several minutes because some generated C chunks
 are very large. All outputs are ignored private artifacts.
 
-The remaining hard boundary is turning the captured BSE export registry into
-the exact import map for Moveset, Mirror Mode, and Eclipse. Their KXE export
-sections are absent, so initialization order and name-based procedure lookup
-must still be reproduced before those modules can be added to the combined
-DOL.
+The export boundary is now solved without a live-memory dump. A relocation-
+aware PowerPC constant-propagation pass reconstructs BSE's calls to
+`register_procedure`, including the compiler's reused-register form. It
+recovers 139 exact exports and resolves all 68 unique imports needed by the
+three consumers. The combined image places BSE at `0x81600000`, Moveset at
+`0x81673000`, Mirror Mode at `0x8167a000`, Eclipse at `0x8167d000`, and the
+lifecycle shim at `0x817f0000`. The shim also implements runtime name lookup.
+
+All four module prologues are now called in dependency order, and the combined
+DLL passes ABI inspection with 269 chunks. The remaining boundary is runtime
+acceptance: visible rendering, menus, gameplay, patches, saves, and shutdown.
