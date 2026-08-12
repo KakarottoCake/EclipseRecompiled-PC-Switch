@@ -1,0 +1,20 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 3c9dfe7..b12ae1f 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -124,4 +124,5 @@ if(MODERNGEKKO_BUILD_FULL_RUNTIME)
+     set(DISTRIBUTOR "ModernGekko" CACHE STRING "" FORCE)
++    set(MODERNGEKKO_DISABLE_CORE_PCH ON CACHE BOOL "" FORCE)
+     add_subdirectory(vendor/dolphin EXCLUDE_FROM_ALL)
+     target_sources(core PRIVATE
+         vendor/dolphin/GXRuntime/src/core/cpu_exception.c)
+@@ -286,6 +287,9 @@ if(MODERNGEKKO_ENABLE_DOLPHIN_RUNTIME)
+         target_compile_definitions(moderngekko PRIVATE _M_GENERIC=1)
+     endif()
+     target_link_libraries(moderngekko PRIVATE core uicommon)
++    if(WIN32)
++        target_link_libraries(moderngekko PRIVATE videod3d videod3d12)
++    endif()
+     if(TARGET PkgConfig::X11)
+         target_sources(moderngekko PRIVATE
+             vendor/dolphin/Source/Core/DolphinNoGUI/PlatformX11.cpp)

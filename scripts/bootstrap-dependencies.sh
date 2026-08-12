@@ -3,6 +3,12 @@
 # applies the complete Apple runtime patch set. No game data is downloaded.
 set -euo pipefail
 
+# Git Bash can inherit devkitPro's MSYS Git ahead of its own Windows Git. That
+# combination cannot locate Git Bash's helper scripts or honor long paths.
+if [[ -x /mingw64/bin/git ]]; then
+  PATH="/mingw64/bin:/usr/bin:$PATH"
+fi
+
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 REF="$ROOT/ref"
 MG="$REF/ModernGekko"
@@ -46,9 +52,14 @@ apply_patch_once() {
 }
 
 verify_patch_scope() {
-  local checkout=$1 patch=$2 extra_allowed=${3:-}
+  local checkout=$1 extra_allowed=$2
+  shift 2
   local allowed changed
-  allowed=$(awk '/^diff --git / {sub(/^b\//, "", $4); print $4}' "$patch")
+  allowed=$(
+    for patch in "$@"; do
+      awk '/^diff --git / {sub(/^b\//, "", $4); print $4}' "$patch"
+    done
+  )
   while IFS= read -r changed; do
     [[ -z "$changed" || "$changed" == "$extra_allowed" ]] && continue
     if ! grep -Fqx "$changed" <<<"$allowed"; then
@@ -74,14 +85,16 @@ git -C "$MG" submodule update --init vendor/dolphin
 REQUIRED_DOLPHIN_SUBMODULES=(
   DolRecomp
   Externals/SDL/SDL Externals/SFML/SFML Externals/bzip2/bzip2
-  Externals/cpp-optparse/cpp-optparse Externals/cubeb/cubeb
+  Externals/cpp-ipc/cpp-ipc Externals/cpp-optparse/cpp-optparse
+  Externals/cubeb/cubeb
   Externals/curl/curl Externals/enet/enet Externals/fmt/fmt
   Externals/glslang/glslang Externals/hidapi/hidapi-src
   Externals/imgui/imgui Externals/implot/implot Externals/libspng/libspng
-  Externals/libusb/libusb Externals/lz4/lz4
+  Externals/libusb/libusb Externals/lz4/lz4 Externals/libadrenotools
   Externals/minizip-ng/minizip-ng Externals/pugixml/pugixml
   Externals/spirv_cross/SPIRV-Cross Externals/tinygltf/tinygltf
-  Externals/watcher/watcher Externals/xxhash/xxHash
+  Externals/Vulkan-Headers Externals/VulkanMemoryAllocator
+  Externals/watcher/watcher Externals/wil Externals/xxhash/xxHash
   Externals/zlib-ng/zlib-ng Externals/zstd/zstd
 )
 git -C "$MG/vendor/dolphin" submodule update --init "${REQUIRED_DOLPHIN_SUBMODULES[@]}"
@@ -94,11 +107,18 @@ if [[ "$actual_dolphin" != "$DOLPHIN_REV" ]]; then
 fi
 
 apply_patch_once "$MG" "$ROOT/patches/ModernGekko/0001-sunpad-apple-runtime.patch"
+apply_patch_once "$MG" "$ROOT/patches/ModernGekko/0002-eclipse-windows-runtime.patch"
 apply_patch_once "$MG/vendor/dolphin" \
   "$ROOT/patches/ModernGekko-dolphin/0001-sunpad-ios-runtime.patch"
+apply_patch_once "$MG/vendor/dolphin" \
+  "$ROOT/patches/ModernGekko-dolphin/0002-eclipse-windows-runtime.patch"
 verify_patch_scope "$MG" \
-  "$ROOT/patches/ModernGekko/0001-sunpad-apple-runtime.patch" vendor/dolphin
+  vendor/dolphin \
+  "$ROOT/patches/ModernGekko/0001-sunpad-apple-runtime.patch" \
+  "$ROOT/patches/ModernGekko/0002-eclipse-windows-runtime.patch"
 verify_patch_scope "$MG/vendor/dolphin" \
-  "$ROOT/patches/ModernGekko-dolphin/0001-sunpad-ios-runtime.patch"
+  "" \
+  "$ROOT/patches/ModernGekko-dolphin/0001-sunpad-ios-runtime.patch" \
+  "$ROOT/patches/ModernGekko-dolphin/0002-eclipse-windows-runtime.patch"
 
 echo "SunPad dependencies are pinned and patched."
