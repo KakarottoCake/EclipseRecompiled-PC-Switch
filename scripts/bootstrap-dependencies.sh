@@ -116,6 +116,8 @@ apply_patch_once "$MG/vendor/dolphin" \
   "$ROOT/patches/ModernGekko-dolphin/0002-eclipse-windows-runtime.patch"
 apply_patch_once "$MG/vendor/dolphin" \
   "$ROOT/patches/ModernGekko-dolphin/0003-eclipse-direct-dol.patch"
+apply_patch_once "$MG/vendor/dolphin" \
+  "$ROOT/patches/ModernGekko-dolphin/0004-eclipse-smc-fallback.patch"
 verify_patch_scope "$MG" \
   vendor/dolphin \
   "$ROOT/patches/ModernGekko/0001-sunpad-apple-runtime.patch" \
@@ -125,6 +127,7 @@ verify_patch_scope "$MG/vendor/dolphin" \
   "" \
   "$ROOT/patches/ModernGekko-dolphin/0001-sunpad-ios-runtime.patch" \
   "$ROOT/patches/ModernGekko-dolphin/0002-eclipse-windows-runtime.patch" \
-  "$ROOT/patches/ModernGekko-dolphin/0003-eclipse-direct-dol.patch"
+  "$ROOT/patches/ModernGekko-dolphin/0003-eclipse-direct-dol.patch" \
+  "$ROOT/patches/ModernGekko-dolphin/0004-eclipse-smc-fallback.patch"
 
 echo "ModernGekko dependencies are pinned and patched for SunPad and Eclipse."
