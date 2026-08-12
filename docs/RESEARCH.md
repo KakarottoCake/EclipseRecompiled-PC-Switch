@@ -1,6 +1,6 @@
 # Research
 
-Last updated: 2026-08-05
+Last updated: 2026-08-12
 
 ## Questions this document answers
 
@@ -59,6 +59,18 @@ Matching decompilation project for Super Mario Sunshine.
 - Supported versions documented as `GMSJ01` primarily; PAL noted as broken; US `GMSE01` is **not** listed as a current default supported configure target in the README snapshot inspected.
 - Progress service reports substantial but incomplete code matching (fuzzy match around low-70% range at pin time).
 - Produces matching object files for analysis, **not** a host-native playable recompilation product.
+- The current source snapshot is useful for readable SDK/JSystem structures,
+  retail function intent, stack/arena layout, and symbol cross-checks while
+  DolRecomp remains the executable conversion path.
+
+### Aurora
+
+[Aurora](https://github.com/encounter/aurora) is a source-level GameCube/Wii
+compatibility layer intended primarily for decompilation projects. It provides
+GX, PAD, DVD, CARD, SDL3, and cross-platform graphics infrastructure.
+ModernGekko's GXRuntime already carries an Aurora-derived graphics/runtime tree,
+so this project has been benefiting from Aurora through the selected SunPad
+stack rather than maintaining a second direct frontend integration.
 
 ### ReShine
 
