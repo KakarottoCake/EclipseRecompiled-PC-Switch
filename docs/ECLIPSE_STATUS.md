@@ -17,6 +17,14 @@ Last verified: August 12, 2026.
   `EclipseRecompiled-run.exe`, and `moderngekko-port.exe`.
 - The Windows host includes SDL controller support and Dolphin's direct
   GameCube-adapter support.
+- The independent KXE v0 reader validates all four shipped Eclipse modules,
+  including 18,799 relocations and 83 named imports in total.
+- Better Sunshine Engine relocates at the experimental `0x81700000` fixture
+  and DolRecomp converts it into 29 native C chunks.
+- Those BSE chunks compile into `gBSE000_recomp.dll` and pass the runtime ABI
+  inspector: ABI 3, entry `0x8170e314`, 1 code range, 938 SMC ranges, and 29
+  chunk ranges. This proves the first KXE can enter the full native toolchain;
+  it is not integrated into the game module yet.
 
 None of the private extraction, generated game code, or compiled game module
 is committed or distributable from this repository.
@@ -29,10 +37,12 @@ Engine, the moveset, mirror mode, and Eclipse itself. The Windows host and DOL
 module are ready, but the Kuribo/KXE layer has not yet been converted or
 reimplemented for the native runtime.
 
-The next concrete milestone is an independently implemented KXE reader and
-link plan covering sections, imports, relocations, initialization order, and
-patch hooks. A diagnostic DOL-only launch may fail; it is not presented as a
-playable build.
+The next concrete milestone is merging BSE's generated ranges into the GMSE04
+module and preserving its runtime export registration. The three dependent
+modules cannot be linked until their named BSE imports have exact addresses.
+See [the KXE compatibility notes](KXE_FORMAT.md) for the verified format,
+conversion path, and remaining runtime boundary. A diagnostic DOL-only launch
+may fail; it is not presented as a playable build.
 
 ## Reproducible Windows command
 
