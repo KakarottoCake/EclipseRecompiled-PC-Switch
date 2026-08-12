@@ -6,7 +6,9 @@ its ignored upstream trees:
 | Patch | Applies to | Contents |
 |---|---|---|
 | `ModernGekko/0001-sunpad-apple-runtime.patch` | Pinned ModernGekko root | Apple frontend/runtime integration, macOS Metal defaults, iOS platform and build wiring, and the SunPad-owned files required by the Apple workflows |
+| `ModernGekko/0002-eclipse-windows-runtime.patch` | Patched ModernGekko root | Prevents MSVC from forcing Dolphin's C++ precompiled header onto GXRuntime's C exception source |
 | `ModernGekko-dolphin/0001-sunpad-ios-runtime.patch` | Pinned `ModernGekko/vendor/dolphin` | Complete Dolphin-derived iOS/runtime delta, including Metal/platform guards and stubs, no-JIT/software-loader behavior, iOS audio integration, StaticRecomp timebase/TL/TU fixes, and iOS backend/link fixes |
+| `ModernGekko-dolphin/0002-eclipse-windows-runtime.patch` | Patched `ModernGekko/vendor/dolphin` | Small MSVC portability fix for the GXRuntime lockstep-journal export used while compiling native Windows game modules |
 
 These replace the earlier partial patch series. Required CoreAudio,
 mixer, platform-stub, frontend, and build changes are no longer
@@ -26,7 +28,8 @@ fully applied and stops if a checkout is on an unexpected commit or either
 snapshot does not apply cleanly.
 
 The snapshots contain generic Apple/runtime integration for SunPad's current
-`GMSE01` development path. A future game-specific address map, runtime
+`GMSE01` development path plus the isolated Windows portability delta needed by
+the Eclipse PC module build. A future game-specific address map, runtime
 code-patching range, HLE decision, MMIO route, or revision-specific workaround
 must remain clearly identified and reviewed rather than hidden in an unrelated
 platform edit.

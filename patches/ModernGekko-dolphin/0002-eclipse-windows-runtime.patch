@@ -1,0 +1,46 @@
+diff --git a/GXRuntime/src/core/cpu.c b/GXRuntime/src/core/cpu.c
+index 402056423..722f6ed8b 100644
+--- a/GXRuntime/src/core/cpu.c
++++ b/GXRuntime/src/core/cpu.c
+@@ -24,7 +24,14 @@
+  * via dlsym, so its absence simply disables lockstep. `offset` is the RAM byte
+  * offset (into cpu->ram) about to be written, `size` the width in bytes. */
+ PPCMemWriteJournal g_mem_write_journal = NULL;
+ void* g_mem_write_journal_user = NULL;
+-__attribute__((visibility("default"))) void ppc_set_mem_write_journal(PPCMemWriteJournal fn, void* user) {
++#if defined(_WIN32)
++#define GXRUNTIME_EXPORT __declspec(dllexport)
++#elif defined(__GNUC__) || defined(__clang__)
++#define GXRUNTIME_EXPORT __attribute__((visibility("default")))
++#else
++#define GXRUNTIME_EXPORT
++#endif
++GXRUNTIME_EXPORT void ppc_set_mem_write_journal(PPCMemWriteJournal fn, void* user) {
+     g_mem_write_journal = fn;
+     g_mem_write_journal_user = user;
+ }
+diff --git a/Source/Core/Core/CMakeLists.txt b/Source/Core/Core/CMakeLists.txt
+index e796aafaf9..87a500c7fd 100644
+--- a/Source/Core/Core/CMakeLists.txt
++++ b/Source/Core/Core/CMakeLists.txt
+@@ -933,7 +933,7 @@ if(TARGET cpp-ipc::ipc)
+   target_link_libraries(core PRIVATE cpp-ipc::ipc)
+ endif()
+ 
+-if(MSVC)
++if(MSVC AND NOT MODERNGEKKO_DISABLE_CORE_PCH)
+   # Add precompiled header
+   target_link_libraries(core PRIVATE use_pch)
+ endif()
+diff --git a/Source/Core/Core/HW/Triforce/FZeroAX.cpp b/Source/Core/Core/HW/Triforce/FZeroAX.cpp
+index 9cda150b89..6effdcd37f 100644
+--- a/Source/Core/Core/HW/Triforce/FZeroAX.cpp
++++ b/Source/Core/Core/HW/Triforce/FZeroAX.cpp
+@@ -3,6 +3,7 @@
+ 
+ #include "Core/HW/Triforce/FZeroAX.h"
+ 
++#include <functional>
+ #include <numeric>
+ 
+ #include <fmt/ranges.h>

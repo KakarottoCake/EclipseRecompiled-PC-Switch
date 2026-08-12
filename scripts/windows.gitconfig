@@ -1,0 +1,5 @@
+[core]
+	autocrlf = true
+	longpaths = true
+[safe]
+	directory = *

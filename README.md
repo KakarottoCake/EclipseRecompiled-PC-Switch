@@ -1,3 +1,57 @@
+# Eclipse Recompiled — PC & Nintendo Switch
+
+> [!IMPORTANT]
+> This fork is at the **bring-up stage**. The native Windows host and Eclipse
+> `main.dol` module now build, but Super Mario Eclipse is not playable through
+> it yet because its Kuribo/KXE modules still need native integration.
+> Nintendo Switch support is a later homebrew port.
+
+Eclipse Recompiled is an experimental native static-recompilation project for
+**Super Mario Eclipse**. The target platforms are Windows/Linux PC and
+Nintendo Switch homebrew. Users will provide their own supported Eclipse disc
+image; this repository will never contain or download the game, extracted
+assets, saves, or other proprietary data.
+
+The project is a fork of
+[SunPad](https://github.com/chrissotraidis/sunpad), which proved that Super
+Mario Sunshine can reach playable gameplay through DolRecomp-generated native
+code and the ModernGekko/Dolphin-derived compatibility runtime. Rather than
+rebuilding GameCube graphics, audio, operating-system, and disc behavior from
+scratch, this fork is adapting that proven runtime to Eclipse's `GMSE04` disc,
+Better Sunshine Engine, and Kuribo modules.
+
+## Current direction
+
+1. Reproduce the known-good retail Sunshine runtime on Windows.
+2. Generate and load the modified Eclipse `main.dol` as a PC-native module.
+3. Support or statically integrate Eclipse's four Kuribo `.kxe` modules.
+4. Reach Eclipse menus and gameplay on Windows, then validate Linux.
+5. Add an intuitive PC launcher, direct GameCube adapter support, and sensible
+   Xbox, PlayStation, and Switch-controller defaults.
+6. Port the working ARM64 stack to Nintendo Switch homebrew using libnx and a
+   statically linked game module.
+
+See [the PC/Switch port plan](docs/ECLIPSE_PC_SWITCH_PLAN.md) for confirmed
+disc facts, milestones, risks, and acceptance gates. Windows is deliberately
+first: it lets us separate Eclipse/Kuribo problems from Switch platform work.
+
+See [the current technical status](docs/ECLIPSE_STATUS.md) for exactly what
+builds, what remains, and the one-command Windows preparation workflow.
+
+## Legal and project status
+
+- This is an unofficial community project with no Nintendo affiliation.
+- No retail or modded disc image is distributed.
+- A legally obtained, locally supplied compatible image is required.
+- Generated game modules and extracted files remain ignored local artifacts.
+- This GPL-3.0-or-later fork preserves SunPad, ModernGekko, Dolphin, DolRecomp,
+  and other upstream attribution. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Upstream SunPad reference
+
+The documentation below describes the inherited Apple target and remains as a
+known-good architectural reference while the PC Eclipse bring-up is developed.
+
 # SunPad
 
 <p align="center">
