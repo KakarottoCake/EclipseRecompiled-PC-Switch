@@ -41,7 +41,9 @@ try {
     & $script:NativePython -m tools.kxe.combine_dol `
         $mainDol $bse $combinedDol `
         --base 0x81600000 --trampoline 0x817F0000 `
-        --lifecycle-hook 0x802A744C --lifecycle-resume 0x802A7450 `
+        --loader-hook 0x802A744C --loader-resume 0x802A7450 `
+        --loader-init 0x802C0F8C `
+        --lifecycle-hook 0x802A746C --lifecycle-resume 0x802A7470 `
         --module "$moveset@0x81673000" `
         --module "$mirror@0x8167A000" `
         --module "$eclipse@0x8167D000"

@@ -1,0 +1,222 @@
+diff --git a/Source/Core/Core/Boot/Boot.cpp b/Source/Core/Core/Boot/Boot.cpp
+index d44b63884e..850cdb7 100644
+--- a/Source/Core/Core/Boot/Boot.cpp
++++ b/Source/Core/Core/Boot/Boot.cpp
+@@ -282,14 +282,25 @@ bool CBoot::BootUp(Core::System& system, const Core::CPUThreadGuard& guard,
+       return true;
+     }
+
+-    bool operator()(const BootParameters::Executable& executable) const
++    bool operator()(BootParameters::Executable& executable) const
+     {
+       NOTICE_LOG_FMT(BOOT, "Booting from executable: {}", executable.path);
+
+       if (!executable.reader->IsValid())
+         return false;
+
+-      SetDefaultDisc(system.GetDVDInterface());
++      const DiscIO::VolumeDisc* volume = nullptr;
++      if (executable.disc)
++      {
++        volume = SetDisc(system.GetDVDInterface(), std::move(executable.disc->volume),
++                          std::move(executable.disc->auto_disc_change_paths));
++        if (!volume)
++          return false;
++      }
++      else
++      {
++        SetDefaultDisc(system.GetDVDInterface());
++      }
+
+       auto& ppc_state = system.GetPPCState();
+
+@@ -327,7 +338,56 @@ bool CBoot::BootUp(Core::System& system, const Core::CPUThreadGuard& guard,
+         return false;
+       }
+
+-      AchievementManager::GetInstance().LoadGame(nullptr);
++      if (executable.disc)
++      {
++        // A normal GameCube boot reads the disc ID before any game code uses
++        // the DVD interface. Direct DOL boot skips the apploader, so perform
++        // that transition explicitly as well as copying the boot records.
++        if (!DVDReadDiscID(system, *volume, 0x00000000))
++        {
++          PanicAlertFmtT("Failed to read the extracted disc ID.");
++          return false;
++        }
++
++        // A normal GameCube bootloader copies the disc ID and filesystem table
++        // into low memory before transferring control to the DOL. A direct DOL
++        // boot skips that loader, so provide the same two boot records from the
++        // extracted volume before the game's DVD library initializes.
++        constexpr u32 fst_address = 0x817E0000;
++        std::vector<u8> boot_header(0x440);
++        std::vector<u8> fst;
++        if (!volume->Read(0, boot_header.size(), boot_header.data(), DiscIO::PARTITION_NONE))
++        {
++          PanicAlertFmtT("Failed to read the extracted disc filesystem table.");
++          return false;
++        }
++        const u32 fst_offset = Common::swap32(boot_header.data() + 0x424);
++        const u32 fst_size = Common::swap32(boot_header.data() + 0x428);
++        if (fst_size == 0 || fst_size > 0x00010000)
++        {
++          PanicAlertFmtT("The extracted disc has an invalid filesystem table size.");
++          return false;
++        }
++        fst.resize(fst_size);
++        if (!volume->Read(fst_offset, fst.size(), fst.data(), DiscIO::PARTITION_NONE))
++        {
++          PanicAlertFmtT("Failed to read the extracted disc filesystem table.");
++          return false;
++        }
++        auto& memory = system.GetMemory();
++        memory.CopyToEmu(0x80000000, boot_header.data(), 0x20);
++        memory.CopyToEmu(fst_address, fst.data(), fst.size());
++        memory.Write_U32(fst_address, 0x80000038);
++        memory.Write_U32(static_cast<u32>(fst.size()), 0x8000003C);
++
++        // Normal disc boot spends time in the IPL/apploader before the game
++        // first probes the EXI bus. Direct executable boot does not, so make
++        // the SDK's probe timer start in the ready state for the already
++        // attached emulated memory card.
++        system.GetExpansionInterface().PrepareForDirectBoot();
++      }
++
++      AchievementManager::GetInstance().LoadGame(volume);
+
+       SConfig::OnTitleDirectlyBooted(guard);
+
+diff --git a/Source/Core/Core/Boot/Boot.h b/Source/Core/Core/Boot/Boot.h
+index 9cee293d58..d142340 100644
+--- a/Source/Core/Core/Boot/Boot.h
++++ b/Source/Core/Core/Boot/Boot.h
+@@ -117,6 +117,9 @@ struct BootParameters
+   {
+     std::string path;
+     std::unique_ptr<BootExecutableReader> reader;
++    // Optional disc to insert while this executable is running. This keeps
++    // direct-DOL boots connected to the game's DVD filesystem.
++    std::optional<Disc> disc;
+   };
+
+   struct NANDTitle
+diff --git a/Source/Core/Core/HW/EXI/EXI.cpp b/Source/Core/Core/HW/EXI/EXI.cpp
+index ba3e88f..bd75537 100644
+--- a/Source/Core/Core/HW/EXI/EXI.cpp
++++ b/Source/Core/Core/HW/EXI/EXI.cpp
+@@ -264,4 +264,13 @@ void ExpansionInterfaceManager::ScheduleUpdateInterrupts(CoreTiming::FromThread
+   m_system.GetCoreTiming().ScheduleEvent(cycles_late, m_event_type_update_interrupts, 0, from);
+ }
+
++void ExpansionInterfaceManager::PrepareForDirectBoot()
++{
++  for (auto& channel : m_channels)
++  {
++    if (channel)
++      channel->PrepareForDirectBoot();
++  }
++}
++
+ }  // namespace ExpansionInterface
+diff --git a/Source/Core/Core/HW/EXI/EXI.h b/Source/Core/Core/HW/EXI/EXI.h
+index 7ded905b98..fc45e10 100644
+--- a/Source/Core/Core/HW/EXI/EXI.h
++++ b/Source/Core/Core/HW/EXI/EXI.h
+@@ -79,6 +79,10 @@ public:
+   void UpdateInterrupts();
+   void ScheduleUpdateInterrupts(CoreTiming::FromThread from, int cycles_late);
+
++  // Prepare the emulated EXI bus for a direct executable (DOL/ELF) boot,
++  // which does not run the IPL/apploader insertion-settling sequence.
++  void PrepareForDirectBoot();
++
+   void ChangeDevice(Slot slot, EXIDeviceType device_type,
+                     CoreTiming::FromThread from_thread = CoreTiming::FromThread::NON_CPU);
+   void ChangeDevice(u8 channel, u8 device_num, EXIDeviceType device_type,
+diff --git a/Source/Core/Core/HW/EXI/EXI_Channel.cpp b/Source/Core/Core/HW/EXI/EXI_Channel.cpp
+index 8d47a81..9b9a087 100644
+--- a/Source/Core/Core/HW/EXI/EXI_Channel.cpp
++++ b/Source/Core/Core/HW/EXI/EXI_Channel.cpp
+@@ -11,6 +11,7 @@
+ #include "Common/Logging/Log.h"
+
+ #include "Core/CoreTiming.h"
++#include "Core/HW/Memmap.h"
+ #include "Core/HW/EXI/EXI.h"
+ #include "Core/HW/EXI/EXI_Device.h"
+ #include "Core/HW/MMIO.h"
+@@ -61,6 +62,18 @@ void CEXIChannel::RegisterMMIO(MMIO::Mapping* mmio, u32 base)
+                      m_status.EXT = GetDevice(1)->IsPresent() ? 1 : 0;
+                    }
+
++                   if (m_direct_boot_prepared && m_channel_id < 2 &&
++                       m_direct_boot_probe_reads < 8)
++                   {
++                     // __EXIProbeStartTime is an SDK global. EXIInit clears it
++                     // during game startup, so seed it at the first direct-boot
++                     // probe rather than before the guest has initialized EXI.
++                     constexpr u32 exi_probe_start_time = 0x800030C0;
++                     m_system.GetMemory().Write_U32(
++                         0x80000000, exi_probe_start_time + m_channel_id * sizeof(u32));
++                     ++m_direct_boot_probe_reads;
++                   }
++
+                    return m_status.Hex;
+                  }),
+                  MMIO::ComplexWrite<u32>([this](Core::System& system, u32, u32 val) {
+@@ -149,7 +162,10 @@ void CEXIChannel::RegisterMMIO(MMIO::Mapping* mmio, u32 base)
+ 
+                      // Check if device needs specific timing, otherwise just complete transfer
+                      // immediately
+-                     if (!device->UseDelayedTransferCompletion())
++                     // Immediate transfers complete as soon as the device has
++                     // consumed the command. Devices only delay DMA completion
++                     // when they model transfer-rate timing.
++                     if (m_control.DMA == 0 || !device->UseDelayedTransferCompletion())
+                        SendTransferComplete();
+                    }
+                  }));
+@@ -291,4 +307,14 @@ void CEXIChannel::SetEXIINT(bool exiint)
+ {
+   m_status.EXIINT = !!exiint;
+ }
++
++void CEXIChannel::PrepareForDirectBoot()
++{
++  // The SDK's EXI probe treats an insertion interrupt as a 300 ms debounce
++  // window. A direct DOL starts after the IPL/apploader, so there is no
++  // hardware transition to wait through; report the already-present device
++  // without the stale insertion interrupt.
++  m_status.EXTINT = 0;
++  m_direct_boot_prepared = true;
++}
+ }  // namespace ExpansionInterface
+diff --git a/Source/Core/Core/HW/EXI/EXI_Channel.h b/Source/Core/Core/HW/EXI/EXI_Channel.h
+index 62f3aafcac..d83a3b1 100644
+--- a/Source/Core/Core/HW/EXI/EXI_Channel.h
++++ b/Source/Core/Core/HW/EXI/EXI_Channel.h
+@@ -49,6 +49,10 @@ public:
+   // This should only be used to transition interrupts from SP1 to Channel 2
+   void SetEXIINT(bool exiint);
+
++  // Direct executable boot skips the IPL/apploader delay during which EXI
++  // insertion is normally debounced by the GameCube SDK.
++  void PrepareForDirectBoot();
++
+ private:
+   enum
+   {
+@@ -125,5 +129,11 @@ private:
+   };
+
+   std::array<std::unique_ptr<IEXIDevice>, NUM_DEVICES> m_devices;
++
++  // Direct DOL/ELF boot does not run the IPL/apploader EXI settling delay.
++  bool m_direct_boot_prepared = false;
++  // EXIInit may clear the SDK timer after the first host-side status read.
++  // Keep reseeding only through that short initialization handoff.
++  u8 m_direct_boot_probe_reads = 0;
+ };
+ }  // namespace ExpansionInterface

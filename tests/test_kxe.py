@@ -215,10 +215,18 @@ class KxeParserTests(unittest.TestCase):
             0x81780000,
             lifecycle_hook_address=0x802A744C,
             lifecycle_resume_address=0x802A7450,
+            loader_hook_address=0x802A7448,
+            loader_resume_address=0x802A744C,
+            loader_init_address=0x802A7440,
         )
         hook = struct.unpack_from(">I", combined, 0x10C)[0]
         self.assertEqual(hook, 0x494D8BD4)
+        skipped = struct.unpack_from(">I", combined, 0x108)[0]
+        self.assertEqual(skipped, 0x48000000 | ((0x81780300 - 0x802A7448) & 0x03FFFFFC))
         shim_offset = struct.unpack_from(">I", combined, 0x08)[0]
+        loader_prelude = struct.unpack_from(">10I", combined, shim_offset + 0x300)
+        self.assertEqual(loader_prelude[:2], (0x38600001, 0x38800000))
+        self.assertEqual(loader_prelude[2:6], (0x3D80802A, 0x618C7440, 0x7D8903A6, 0x4E800421))
         context = struct.unpack_from(">5I", combined, shim_offset + 0x140)
         self.assertEqual(
             context,

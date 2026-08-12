@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Recreates SunPad's ignored upstream source tree at exact reviewed commits and
-# applies the complete Apple runtime patch set. No game data is downloaded.
+# applies the reviewed Apple, Windows, and direct-DOL runtime patch sets. No
+# game data is downloaded.
 set -euo pipefail
 
 # Git Bash can inherit devkitPro's MSYS Git ahead of its own Windows Git. That
@@ -108,17 +109,22 @@ fi
 
 apply_patch_once "$MG" "$ROOT/patches/ModernGekko/0001-sunpad-apple-runtime.patch"
 apply_patch_once "$MG" "$ROOT/patches/ModernGekko/0002-eclipse-windows-runtime.patch"
+apply_patch_once "$MG" "$ROOT/patches/ModernGekko/0003-eclipse-direct-dol.patch"
 apply_patch_once "$MG/vendor/dolphin" \
   "$ROOT/patches/ModernGekko-dolphin/0001-sunpad-ios-runtime.patch"
 apply_patch_once "$MG/vendor/dolphin" \
   "$ROOT/patches/ModernGekko-dolphin/0002-eclipse-windows-runtime.patch"
+apply_patch_once "$MG/vendor/dolphin" \
+  "$ROOT/patches/ModernGekko-dolphin/0003-eclipse-direct-dol.patch"
 verify_patch_scope "$MG" \
   vendor/dolphin \
   "$ROOT/patches/ModernGekko/0001-sunpad-apple-runtime.patch" \
-  "$ROOT/patches/ModernGekko/0002-eclipse-windows-runtime.patch"
+  "$ROOT/patches/ModernGekko/0002-eclipse-windows-runtime.patch" \
+  "$ROOT/patches/ModernGekko/0003-eclipse-direct-dol.patch"
 verify_patch_scope "$MG/vendor/dolphin" \
   "" \
   "$ROOT/patches/ModernGekko-dolphin/0001-sunpad-ios-runtime.patch" \
-  "$ROOT/patches/ModernGekko-dolphin/0002-eclipse-windows-runtime.patch"
+  "$ROOT/patches/ModernGekko-dolphin/0002-eclipse-windows-runtime.patch" \
+  "$ROOT/patches/ModernGekko-dolphin/0003-eclipse-direct-dol.patch"
 
-echo "SunPad dependencies are pinned and patched."
+echo "ModernGekko dependencies are pinned and patched for SunPad and Eclipse."

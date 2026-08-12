@@ -44,6 +44,21 @@ Required now:
 2. **ModernGekko** (+ vendored dolphin/RecompCore branch and required Externals) — host runtime, module packaging, launch.
 3. **ModernGekko-Template** — orchestrates extract → recompile → module → run.
 
+For the Eclipse direct-DOL path, the ModernGekko patch stack also provides the
+runtime bridge that a normal GameCube IPL/apploader would have supplied:
+
+- the runner can select a recompiled DOL with `--boot-dol`;
+- the extracted `sys/main.dol` tree is exposed as the emulated DVD volume;
+- the disc ID and synthetic volume FST are copied into the guest's normal boot
+  locations; and
+- the EXI startup path can see an already-present memory card without waiting
+  for the skipped IPL/apploader debounce sequence.
+
+This makes the host/runtime contract reproducible, but it does not make the
+Eclipse game finished by itself. The game-specific native module, controller
+mapping, graphics behavior, and a complete boot-to-game smoke test still need
+to be completed and reviewed before calling the build playable.
+
 Useful but secondary:
 
 - **doldecomp/sms** — symbols/maps/progress for research; not a playable native path by itself.

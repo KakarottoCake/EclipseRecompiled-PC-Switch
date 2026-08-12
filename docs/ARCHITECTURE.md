@@ -72,7 +72,7 @@ SunPadGameViewController
 
 The ignored upstream trees are recreated from their pinned commits by
 `scripts/bootstrap-dependencies.sh`; every required delta is represented by
-the two complete snapshots indexed in [patches/README.md](../patches/README.md).
+the complete runtime snapshots indexed in [patches/README.md](../patches/README.md).
 
 - `PlatformIOS.mm` (CAMetalLayer platform), Metal backend AppKit guards,
   cubeb/libusb/hidapi/Quartz/watcher/AGL gating, GCAdapter + FilesystemWatcher
