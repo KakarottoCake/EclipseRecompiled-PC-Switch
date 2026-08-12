@@ -1,8 +1,7 @@
 diff --git a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_Run.cpp b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_Run.cpp
 --- a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_Run.cpp
 +++ b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_Run.cpp
-@@ -154,7 +154,12 @@ void StaticRecompCore::Run()
-         }
+@@ -154,7 +154,18 @@ void StaticRecompCore::Run()
          // SingleStepInner delivers synchronous exceptions itself; external
          // interrupts are delivered at slice start, as in Interpreter::Run.
 -        if (m_module_active && IsForcedFallbackAddress(ppc.pc))
@@ -10,8 +9,17 @@ diff --git a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_Run.cpp b/So
 +        // ordinary OS code, but it has no static-recomp dispatch boundary for
 +        // a chunk that was demoted after self-modifying-code verification.
 +        // Without this check it may stay inside the stale block indefinitely.
-+        const bool module_fallback = m_module_active && ChunkIndexOf(ppc.pc) >= 0;
-+        if (module_fallback || (m_module_active && IsForcedFallbackAddress(ppc.pc)))
++        const int fallback_chunk = ChunkIndexOf(ppc.pc);
++        if (fallback_chunk >= 0 || (m_module_active && IsForcedFallbackAddress(ppc.pc)))
          {
-           ppc.downcount -= interpreter.SingleStepInner();
-           ++m_fallback_steps;
+-          ppc.downcount -= interpreter.SingleStepInner();
+-          ++m_fallback_steps;
++          do
++          {
++            ppc.downcount -= interpreter.SingleStepInner();
++            ++m_fallback_steps;
++          } while (ppc.downcount > 0 && *state_ptr == CPU::State::Running &&
++                   !(ppc.Exceptions & SYNC_EXCEPTION_MASK) && !IsHostCallAddress(ppc.pc) &&
++                   (fallback_chunk < 0 || ChunkIndexOf(ppc.pc) == fallback_chunk) &&
++                   !DispatchableAt(ppc.pc));
+         }
