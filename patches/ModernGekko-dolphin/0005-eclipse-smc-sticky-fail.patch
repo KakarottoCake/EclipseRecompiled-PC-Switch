@@ -1,0 +1,47 @@
+diff --git a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_SMC.cpp b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_SMC.cpp
+--- a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_SMC.cpp
++++ b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_SMC.cpp
+@@ -321,10 +321,10 @@ void StaticRecompCore::VerifyChunk(u32 index)
+     std::fprintf(stderr,
+                  "[staticrecomp] SMC: chunk [0x%08X,0x%08X) hash mismatch; interpreter until "
+-                 "next invalidation (%u failed)\n",
++                 "explicit cache clear or REL remap (%u failed)\n",
+                  chunk.start, chunk.end, m_failed_chunks);
+     WARN_LOG_FMT(POWERPC,
+                  "StaticRecomp: chunk [0x{:08X},0x{:08X}) failed verification (guest code "
+-                 "differs from module); interpreter until next invalidation",
++                 "differs from module); interpreter until explicit cache clear or REL remap",
+                  chunk.start, chunk.end);
+   }
+ }
+@@ -362,10 +362,16 @@ void StaticRecompCore::OnICacheInvalidate(u32 address, u32 length)
+     if (chunk.start > last)
+       break;
+ 
+-    if (m_chunk_state[i] != CHUNK_UNVERIFIED)
++    // A chunk that has already failed verification is conservatively pinned to
++    // the interpreter for this run.  Re-invalidating the same patched code
++    // cannot make the generated native block valid again, and repeatedly
++    // hashing/logging it only adds startup cost. ClearCache or a discovered REL
++    // remap explicitly resets this state when a fresh verification is useful.
++    if (m_chunk_state[i] == CHUNK_FAILED)
++      continue;
++
++    if (m_chunk_state[i] != CHUNK_UNVERIFIED)
+     {
+-      if (m_chunk_state[i] == CHUNK_FAILED)
+-        --m_failed_chunks;
+       m_chunk_state[i] = CHUNK_UNVERIFIED;
+       ++m_reverify_events;
+     }
+diff --git a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore.h b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore.h
+--- a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore.h
++++ b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore.h
+@@ -102,5 +102,6 @@ class StaticRecompCore : public JitBase
+   // recorded hash of the original text. An icache invalidation touching a
+   // chunk resets it to Unverified (Dolphin invalidates while *loading* code,
+   // so invalidation alone must not retire coverage); a hash mismatch (real
+-  // SMC) marks it Failed, interpreter-only until the next invalidation.
++  // SMC) marks it Failed and conservatively keeps it interpreter-only until an
++  // explicit cache clear or REL remap resets the verification state.
+   enum ChunkState : u8

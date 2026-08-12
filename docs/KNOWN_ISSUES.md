@@ -145,9 +145,11 @@ Last updated: 2026-08-11
 4. **Eclipse direct-DOL startup is still SMC-bound** — the native module now
    yields modified chunks safely to bounded Dolphin-interpreter slices, but
    Eclipse's startup path touches enough code-patching ranges that a Windows
-   run can spend minutes before a rendered frame. Do not treat process
-   liveness as playable acceptance; the next optimization must preserve
-   interpreter/JIT correctness while reducing this demoted-code cost.
+   run can spend minutes before a rendered frame. Failed chunks are kept
+   interpreter-only for the run to avoid repeated hash/log work; an explicit
+   cache clear or REL remap is required before they are verified again. Do not
+   treat process liveness as playable acceptance; the next optimization must
+   preserve interpreter/JIT correctness while reducing this demoted-code cost.
 
 ## Resolved / non-blocking observations
 

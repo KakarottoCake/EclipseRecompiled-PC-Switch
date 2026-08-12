@@ -51,6 +51,11 @@ Last verified: August 12, 2026.
   chunk, host call, exception, or timing boundary. The Windows diagnostic
   reaches Eclipse's exception/scheduler work without an immediate fallback
   deadlock, but startup remains too slow for a rendering or gameplay claim.
+- A failed SMC verification is now sticky for the current run: repeated cache
+  invalidations do not re-hash or re-log the same failed chunk, while an
+  explicit cache clear or newly discovered REL mapping can re-enable
+  verification. A 60-second Windows diagnostic reached 28 unique SMC failures
+  and remained alive; it still did not reach a rendered frame.
 
 None of the private extraction, generated game code, or compiled game module
 is committed or distributable from this repository.
