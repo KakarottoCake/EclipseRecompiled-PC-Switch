@@ -46,8 +46,9 @@ Last verified: August 12, 2026.
   ID/FST boot records, and prepares EXI/memory-card startup. This removes a
   runtime plumbing gap; it does not yet demonstrate a complete Eclipse boot.
 - The desktop fallback path now demotes a runtime-modified static-recomp chunk
-  to Dolphin's interpreter one instruction at a time instead of allowing the
-  fallback JIT to remain inside a stale native block. The Windows diagnostic
+  to bounded Dolphin-interpreter slices instead of allowing the fallback JIT to
+  remain inside a stale native block. Each slice yields at a verified native
+  chunk, host call, exception, or timing boundary. The Windows diagnostic
   reaches Eclipse's exception/scheduler work without an immediate fallback
   deadlock, but startup remains too slow for a rendering or gameplay claim.
 

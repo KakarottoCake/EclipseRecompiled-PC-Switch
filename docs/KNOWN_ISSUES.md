@@ -143,11 +143,11 @@ Last updated: 2026-08-11
    code-patching ranges for GMSE01; no dedicated Sunshine patch set applied.
 3. **Verbose runtime logging is sparse** after module load.
 4. **Eclipse direct-DOL startup is still SMC-bound** — the native module now
-   yields modified chunks safely to Dolphin's interpreter, but Eclipse's
-   startup path touches enough code-patching ranges that a Windows run can
-   spend minutes before a rendered frame. Do not treat process liveness as
-   playable acceptance; the next optimization must preserve interpreter/JIT
-   correctness while reducing this demoted-code cost.
+   yields modified chunks safely to bounded Dolphin-interpreter slices, but
+   Eclipse's startup path touches enough code-patching ranges that a Windows
+   run can spend minutes before a rendered frame. Do not treat process
+   liveness as playable acceptance; the next optimization must preserve
+   interpreter/JIT correctness while reducing this demoted-code cost.
 
 ## Resolved / non-blocking observations
 
