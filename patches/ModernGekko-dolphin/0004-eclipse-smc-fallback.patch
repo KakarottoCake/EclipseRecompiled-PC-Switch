@@ -23,3 +23,21 @@ diff --git a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_Run.cpp b/So
 +                   (fallback_chunk < 0 || ChunkIndexOf(ppc.pc) == fallback_chunk) &&
 +                   !DispatchableAt(ppc.pc));
          }
+diff --git a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore.cpp b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore.cpp
+--- a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore.cpp
++++ b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore.cpp
+@@ -129,8 +129,13 @@ bool StaticRecompCore::ShouldYieldAt(u32 address)
+   if (m_host_call_passthrough && m_host_call_passthrough_pc == address)
+   {
+     m_host_call_passthrough = false;
+     return false;
+   }
+-  if (m_module_active && DispatchableAt(address))
++  // The fallback JIT must yield at every module-covered address, including a
++  // chunk that failed SMC verification.  Otherwise a JIT block entered from
++  // neighboring OS code can continue executing stale native code across the
++  // static-recomp boundary before Run() gets a chance to select the
++  // interpreter.
++  if (m_module_active && ChunkIndexOf(address) >= 0)
+     return true;
+   return IsHostCallAddress(address);
