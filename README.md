@@ -37,6 +37,10 @@ first: it lets us separate Eclipse/Kuribo problems from Switch platform work.
 
 See [the current technical status](docs/ECLIPSE_STATUS.md) for exactly what
 builds, what remains, and the one-command Windows preparation workflow.
+Contributors working on the blocker should also read
+[the KXE compatibility notes](docs/KXE_FORMAT.md), which document the new
+clean-room parser, the successful first BSE conversion, and the unresolved
+runtime export/linking work.
 
 ## Legal and project status
 
