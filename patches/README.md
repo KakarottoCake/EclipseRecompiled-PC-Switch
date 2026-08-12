@@ -11,6 +11,7 @@ its ignored upstream trees:
 | `ModernGekko-dolphin/0001-sunpad-ios-runtime.patch` | Pinned `ModernGekko/vendor/dolphin` | Complete Dolphin-derived iOS/runtime delta, including Metal/platform guards and stubs, no-JIT/software-loader behavior, iOS audio integration, StaticRecomp timebase/TL/TU fixes, and iOS backend/link fixes |
 | `ModernGekko-dolphin/0002-eclipse-windows-runtime.patch` | Patched `ModernGekko/vendor/dolphin` | Small MSVC portability fix for the GXRuntime lockstep-journal export used while compiling native Windows game modules |
 | `ModernGekko-dolphin/0003-eclipse-direct-dol.patch` | Patched `ModernGekko/vendor/dolphin` | Carries disc ID/FST records into direct-DOL boots and makes the EXI/memory-card startup path usable without the IPL/apploader |
+| `ModernGekko-dolphin/0004-eclipse-smc-fallback.patch` | Patched `ModernGekko/vendor/dolphin` | Keeps runtime-modified static-recomp chunks in Dolphin's interpreter instead of letting the fallback JIT execute stale native blocks |
 
 These replace the earlier partial patch series. Required CoreAudio,
 mixer, platform-stub, frontend, build, and direct-DOL changes are no longer

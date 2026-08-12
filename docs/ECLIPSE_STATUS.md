@@ -45,6 +45,11 @@ Last verified: August 12, 2026.
   bridge: `--boot-dol` attaches the extracted volume, recreates the guest disc
   ID/FST boot records, and prepares EXI/memory-card startup. This removes a
   runtime plumbing gap; it does not yet demonstrate a complete Eclipse boot.
+- The desktop fallback path now demotes a runtime-modified static-recomp chunk
+  to Dolphin's interpreter one instruction at a time instead of allowing the
+  fallback JIT to remain inside a stale native block. The Windows diagnostic
+  reaches Eclipse's exception/scheduler work without an immediate fallback
+  deadlock, but startup remains too slow for a rendering or gameplay claim.
 
 None of the private extraction, generated game code, or compiled game module
 is committed or distributable from this repository.
@@ -58,9 +63,10 @@ statically replaces that loader and links all four, but a headless process
 remaining alive does not prove that their runtime patches, rendering, or game
 logic are correct.
 
-The next concrete milestone is visible Windows acceptance: confirm rendering,
-reach Eclipse's menus, enter gameplay, and diagnose any runtime patch or
-unsupported-instruction failures encountered along that path.
+The next concrete milestone is visible Windows acceptance: finish the slow
+SMC-heavy startup, confirm rendering, reach Eclipse's menus, enter gameplay,
+and diagnose any runtime patch or unsupported-instruction failures encountered
+along that path.
 See [the KXE compatibility notes](KXE_FORMAT.md) for the verified format,
 conversion path, and remaining runtime boundary. The direct-DOL launch is still
 a diagnostic path until Windows reaches a rendered menu and controllable
