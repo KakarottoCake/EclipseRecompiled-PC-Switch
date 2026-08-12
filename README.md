@@ -6,12 +6,14 @@
 > is not considered playable yet: the complete module survives a headless boot
 > diagnostic, but rendering, menus, gameplay, saving, and shutdown still need
 > hands-on acceptance.
-> Nintendo Switch support is a later homebrew port.
+> **Current priority:** mature the Windows PC build first. Nintendo Switch
+> support is explicitly deferred until the PC acceptance gates pass.
 
 Eclipse Recompiled is an experimental native static-recompilation project for
-**Super Mario Eclipse**. The target platforms are Windows/Linux PC and
-Nintendo Switch homebrew. Users will provide their own supported Eclipse disc
-image; this repository will never contain or download the game, extracted
+**Super Mario Eclipse**. The eventual target platforms are Windows/Linux PC and
+Nintendo Switch homebrew. The active target is Windows PC; users will provide
+their own supported Eclipse disc image; this repository will never contain or
+download the game, extracted
 assets, saves, or other proprietary data.
 
 The project is a fork of
@@ -27,15 +29,17 @@ Better Sunshine Engine, and Kuribo modules.
 1. Reproduce the known-good retail Sunshine runtime on Windows.
 2. Generate and load the modified Eclipse `main.dol` as a PC-native module.
 3. Support or statically integrate Eclipse's four Kuribo `.kxe` modules.
-4. Reach Eclipse menus and gameplay on Windows, then validate Linux.
-5. Add an intuitive PC launcher, direct GameCube adapter support, and sensible
-   Xbox, PlayStation, and Switch-controller defaults.
-6. Port the working ARM64 stack to Nintendo Switch homebrew using libnx and a
-   statically linked game module.
+4. Reach Eclipse menus and gameplay on Windows.
+5. Mature the Windows launcher, direct GameCube adapter support, modern
+   controller defaults, saves, graphics, audio, and packaging.
+6. Validate Linux only after the Windows PC gate is met.
+7. Revisit Nintendo Switch homebrew only after the PC build is a sustained,
+   controller-driven playable release.
 
 See [the PC/Switch port plan](docs/ECLIPSE_PC_SWITCH_PLAN.md) for confirmed
 disc facts, milestones, risks, and acceptance gates. Windows is deliberately
-first: it lets us separate Eclipse/Kuribo problems from Switch platform work.
+the only active product target right now; this separates Eclipse/Kuribo problems
+from future platform work.
 
 See [the current technical status](docs/ECLIPSE_STATUS.md) for exactly what
 builds, what remains, and the one-command Windows preparation workflow.

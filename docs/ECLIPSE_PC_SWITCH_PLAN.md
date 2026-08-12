@@ -9,9 +9,10 @@ Build Eclipse on the proven SunPad stack:
 - **CPU recompilation:** DolRecomp
 - **GameCube compatibility runtime:** ModernGekko with its Dolphin/RecompCore
   foundation
-- **First product target:** Windows x86-64
-- **Secondary desktop target:** Linux x86-64
-- **Later device target:** Nintendo Switch homebrew, ARM64/libnx
+- **Active product target:** Windows x86-64
+- **Follow-up desktop target:** Linux x86-64, only after the Windows gate
+- **Deferred device target:** Nintendo Switch homebrew, ARM64/libnx, only after
+  the PC build is mature
 - **Game target:** Super Mario Eclipse `GMSE04`, initially version 1.1.0
 
 The older GameCubeRecompiled/Rust experiment is preserved separately for
@@ -191,7 +192,7 @@ and Super Mario Eclipse initialize in the expected order, with deterministic
 address/symbol resolution and no interpreter-only module execution hidden in
 the supported configuration.
 
-## Milestone 4: playable PC alpha
+## Milestone 4: mature Windows PC alpha (active)
 
 Tasks:
 
@@ -209,10 +210,17 @@ Acceptance gate: a clean Windows build can import the supported Eclipse image
 and complete an extended controller-driven play session without developer-only
 manual file placement.
 
-Linux follows after the Windows alpha. Linux support must share the generated
-game/runtime behavior rather than become an independent port.
+This is the current project gate. Linux and Switch work are deliberately
+blocked until it passes.
 
-## Milestone 5: Nintendo Switch technical proof
+## Milestone 5: Linux follow-up (deferred)
+
+Linux follows after the Windows gate. Linux support must share the generated
+game/runtime behavior rather than become an independent port. Do not spend
+platform bring-up time here while the Windows build is still SMC-bound or lacks
+hands-on gameplay acceptance.
+
+## Milestone 6: Nintendo Switch technical proof (deferred)
 
 The Switch target is homebrew for user-controlled hardware using libnx. It is
 not an official Nintendo SDK/eShop target.
@@ -241,7 +249,7 @@ First proof acceptance gate:
 - saves write to and reload from the SD card;
 - suspend/resume either works or exits safely without corrupting data.
 
-## Milestone 6: Switch alpha and release hardening
+## Milestone 7: Switch alpha and release hardening (deferred)
 
 Tasks:
 
@@ -255,19 +263,17 @@ Tasks:
 - publish source, exact dependency revisions, build instructions, checksums,
   limitations, and attribution with every binary release.
 
-## Immediate work queue
+## Immediate Windows PC work queue
 
-1. Finish the pinned dependency bootstrap on Windows.
-2. Make the ModernGekko desktop tools configure and compile with the available
-   Windows toolchain.
-3. Add a safe Windows disc preparation flow derived from SunPad's staging and
-   validation rules.
-4. Generate the Eclipse DOL module.
-5. Locate the public Kuribo loader/format definitions and document the exact
-   KXE ABI.
-6. Decide source rebuild versus ahead-of-time KXE conversion using evidence
-   from the four shipped modules.
+1. Reduce the SMC-heavy Windows startup enough to reach a rendered frame.
+2. Confirm menus, file selection, Delfino Plaza, and a representative Eclipse
+   area with a real Windows renderer.
+3. Exercise keyboard, SDL gamepads, and a Nintendo/Mayflash adapter, including
+   analog L/R trigger pressure and rumble.
+4. Verify saves, area transitions, shutdown, and repeatable cold starts.
+5. Make the launcher and package self-explanatory for a non-developer user.
+6. Run the complete repository/build/package audits from a clean Windows clone.
 
-Do not begin the Switch renderer port before the Eclipse module stack reaches
-the Windows runtime. Doing so would combine game, module-loader, renderer,
-audio, input, and platform failures into one undebuggable target.
+Do not begin Linux or Switch renderer work before the Windows PC gate passes.
+Doing so would combine game, module-loader, renderer, audio, input, and
+platform failures into one undebuggable target.
