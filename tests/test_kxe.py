@@ -20,12 +20,18 @@ from tools.kxe.format import (  # noqa: E402
     parse_kxe,
 )
 from tools.kxe.to_dol import make_dol  # noqa: E402
-from tools.kxe.combine_dol import combine_dol  # noqa: E402
+from tools.kxe.combine_dol import ModulePlacement, combine_dol  # noqa: E402
+from tools.kxe.exports import recover_exports  # noqa: E402
 
 
-def make_kxe(relocations: list[tuple[int, int, int, int, int, int]], imports=()):
-    code = bytearray(32)
-    struct.pack_into(">I", code, 16, 0x48000001)
+def make_kxe(
+    relocations: list[tuple[int, int, int, int, int, int]],
+    imports=(),
+    code_bytes: bytes | bytearray | None = None,
+):
+    code = bytearray(32) if code_bytes is None else bytearray(code_bytes)
+    if code_bytes is None:
+        struct.pack_into(">I", code, 16, 0x48000001)
     header_size = 132
     code_offset = 160
     reloc_offset = code_offset + len(code)
@@ -134,6 +140,43 @@ class KxeParserTests(unittest.TestCase):
         self.assertEqual(struct.unpack_from(">I", dol, 0xE0)[0], 0x81700000)
         self.assertEqual(struct.unpack_from(">I", dol, 0x100)[0], 0x81700008)
 
+    def test_recovers_canonical_and_reused_register_exports(self):
+        base = 0x81000000
+        code = bytearray(0x180)
+        first_name = base + 0x100
+        second_name = base + 0x110
+        first_function = base + 0x80
+        second_function = base + 0x84
+        words = (
+            0x80BD0000,  # lwz r5, 0(r29)
+            0x28050000,  # cmplwi r5, 0
+            0x41820020,  # beq
+            0x3C608100,  # lis r3, first_name@ha
+            0x3C808100,  # lis r4, first_function@ha
+            0x38630100,  # addi r3, r3, first_name@l
+            0x38840080,  # addi r4, r4, first_function@l
+            0x7CA903A6,  # mtctr r5
+            0x4E800421,  # bctrl
+            0x809D0000,  # lwz r4, 0(r29)
+            0x28040000,  # cmplwi r4, 0
+            0x41820020,  # beq
+            0x3CA08100,  # lis r5, second_function@ha
+            0x3C608100,  # lis r3, second_name@ha
+            0x3B850084,  # addi r28, r5, second_function@l
+            0x38630110,  # addi r3, r3, second_name@l
+            0x7C8903A6,  # mtctr r4
+            0x7F84E378,  # mr r4, r28
+            0x4E800421,  # bctrl
+        )
+        struct.pack_into(f">{len(words)}I", code, 0, *words)
+        code[0x100:0x10D] = b"first_export\0"
+        code[0x110:0x11E] = b"second_export\0"
+        exports = recover_exports(parse_kxe(make_kxe([], code_bytes=code)), base)
+        self.assertEqual(
+            {item.name: item.address for item in exports},
+            {"first_export": first_function, "second_export": second_function},
+        )
+
     def test_combines_kxe_and_arena_trampoline_with_existing_dol(self):
         base = bytearray(0x120)
         struct.pack_into(">I", base, 0x00, 0x100)
@@ -176,8 +219,36 @@ class KxeParserTests(unittest.TestCase):
         hook = struct.unpack_from(">I", combined, 0x10C)[0]
         self.assertEqual(hook, 0x494D8BD4)
         shim_offset = struct.unpack_from(">I", combined, 0x08)[0]
-        context = struct.unpack_from(">5I", combined, shim_offset + 0x100)
-        self.assertEqual(context, (0, 0x81780060, 0, 0x81700000, 0))
+        context = struct.unpack_from(">5I", combined, shim_offset + 0x140)
+        self.assertEqual(
+            context,
+            (0, 0x81780100, 0x817800A0, 0x81700000, 0),
+        )
+        getter = struct.unpack_from(">24I", combined, shim_offset + 0xA0)
+        self.assertEqual(getter[19], 0x4200FFD0)
+
+    def test_combined_dol_initializes_multiple_kxe_modules(self):
+        base = bytearray(0x120)
+        struct.pack_into(">I", base, 0x00, 0x100)
+        struct.pack_into(">I", base, 0x48, 0x80003100)
+        struct.pack_into(">I", base, 0x90, 0x20)
+        struct.pack_into(">I", base, 0xE0, 0x80003100)
+        provider = parse_kxe(make_kxe([]))
+        consumer = parse_kxe(make_kxe([]))
+        combined = combine_dol(
+            base,
+            provider,
+            0x81600000,
+            0x817F0000,
+            additional_modules=(ModulePlacement(consumer, 0x81610000, {}),),
+        )
+        module_size = struct.unpack_from(">I", combined, 0x94)[0]
+        self.assertEqual(module_size, 0x10020)
+        shim_offset = struct.unpack_from(">I", combined, 0x08)[0]
+        first_context = struct.unpack_from(">5I", combined, shim_offset + 0x140)
+        second_context = struct.unpack_from(">5I", combined, shim_offset + 0x154)
+        self.assertEqual(first_context[3], 0x81600000)
+        self.assertEqual(second_context[3], 0x81610000)
 
 
 if __name__ == "__main__":

@@ -31,8 +31,16 @@ Last verified: August 12, 2026.
   bypasses the original dynamic Kuribo loader, invokes BSE once at the original
   hook point, and captures BSE's runtime exports.
 - A bounded 30-second headless launch remained active with no immediate module,
-  ABI, or boot failure. Rendering/gameplay and BSE export capture still need
-  explicit acceptance; this is not a playable milestone.
+  ABI, or boot failure. Rendering and gameplay still need explicit acceptance;
+  this is not a playable milestone.
+- Relocation-aware PowerPC analysis now recovers 139 exact BSE runtime exports
+  from the shipped binary. All 68 unique imports required by Moveset, Mirror
+  Mode, and Eclipse resolve without a guessed address.
+- The current combined prototype relocates and initializes all four KXEs in
+  dependency order. Its Windows DLL passes ABI inspection with entry
+  `0x817f0000`, 4 code ranges, 2,843 SMC ranges, and 269 chunks. The hardened
+  build, including runtime name lookup, also remained active for a bounded
+  30-second headless diagnostic with no immediate error.
 
 None of the private extraction, generated game code, or compiled game module
 is committed or distributable from this repository.
@@ -41,12 +49,14 @@ is committed or distributable from this repository.
 
 Eclipse is not only a modified `main.dol`. It loads Kuribo's kernel and four
 PowerPC `.kxe` modules at runtime. Those modules contain Better Sunshine
-Engine, the moveset, mirror mode, and Eclipse itself. The Windows host and DOL
-module are ready, but the Kuribo/KXE layer has not yet been converted or
-reimplemented for the native runtime.
+Engine, the moveset, mirror mode, and Eclipse itself. The prototype now
+statically replaces that loader and links all four, but a headless process
+remaining alive does not prove that their runtime patches, rendering, or game
+logic are correct.
 
-The next concrete milestone is resolving the captured BSE exports and linking
-Moveset, Mirror Mode, and Super Mario Eclipse into the same reserved range.
+The next concrete milestone is visible Windows acceptance: confirm rendering,
+reach Eclipse's menus, enter gameplay, and diagnose any runtime patch or
+unsupported-instruction failures encountered along that path.
 See [the KXE compatibility notes](KXE_FORMAT.md) for the verified format,
 conversion path, and remaining runtime boundary. A diagnostic DOL-only launch
 may fail; it is not presented as a playable build.
@@ -59,6 +69,7 @@ CMake 3.31+, Ninja, and Python 3. Then run from PowerShell:
 ```powershell
 .\scripts\build-eclipse-windows.ps1 `
   -DiscImage "D:\path\to\your\Super Mario Eclipse 1.1.0.iso"
+.\scripts\prepare-eclipse-combined.ps1
 ```
 
 The first run downloads pinned open-source dependencies and takes several

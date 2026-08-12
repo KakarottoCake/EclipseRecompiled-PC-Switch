@@ -13,10 +13,13 @@ $mainDol = Join-Path $game 'sys\main.dol'
 $map = Join-Path $game 'files\marioUS.MAP'
 $mods = Join-Path $game 'files\Kuribo!\Mods'
 $bse = Join-Path $mods 'BetterSunshineEngine.kxe'
+$moveset = Join-Path $mods 'BetterSunshineMoveset.kxe'
+$mirror = Join-Path $mods 'MirrorMode.kxe'
+$eclipse = Join-Path $mods 'SuperMarioEclipse.kxe'
 $dolRecomp = Join-Path $root 'out\dolrecomp-windows\dolrecomp.exe'
 $expectedDolSha256 = '5a146d7d8b2c8244a6188beb1f7c9b738b13897eb0cdacc02283a8a810cac134'
 
-foreach ($required in @($mainDol, $map, $bse, $dolRecomp)) {
+foreach ($required in @($mainDol, $map, $bse, $moveset, $mirror, $eclipse, $dolRecomp)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Missing prerequisite: $required. Run prepare-eclipse-windows.ps1 first."
     }
@@ -37,8 +40,11 @@ Push-Location $root
 try {
     & $script:NativePython -m tools.kxe.combine_dol `
         $mainDol $bse $combinedDol `
-        --base 0x81700000 --trampoline 0x81780000 `
-        --lifecycle-hook 0x802A744C --lifecycle-resume 0x802A7450
+        --base 0x81600000 --trampoline 0x817F0000 `
+        --lifecycle-hook 0x802A744C --lifecycle-resume 0x802A7450 `
+        --module "$moveset@0x81673000" `
+        --module "$mirror@0x8167A000" `
+        --module "$eclipse@0x8167D000"
     if ($LASTEXITCODE -ne 0) { throw 'Combined Eclipse/BSE DOL generation failed.' }
 
     & $dolRecomp --gamecube --cpu gekko --map $map "-j$Jobs" `
@@ -89,7 +95,7 @@ finally {
     Pop-Location
 }
 
-Write-Host 'Combined Eclipse + Better Sunshine Engine prototype built.'
+Write-Host 'Combined Eclipse + all four Kuribo modules prototype built.'
 Write-Host "Game root: $(Join-Path $root 'out\eclipse-combined-game')"
 Write-Host "Module: $(Join-Path $moduleBuild 'gGMSE04_recomp.dll')"
-Write-Warning 'Only BSE is statically initialized. The three dependent Eclipse modules are not linked yet.'
+Write-Warning 'The module is a bring-up prototype. Menus, gameplay, saving, and shutdown are not yet accepted.'

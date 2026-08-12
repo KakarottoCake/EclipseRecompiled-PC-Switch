@@ -2,9 +2,10 @@
 
 > [!IMPORTANT]
 > This fork is at the **bring-up stage**. The native Windows host now builds a
-> combined Eclipse `main.dol` + Better Sunshine Engine module, but Super Mario
-> Eclipse is not playable through it yet because its three dependent
-> Kuribo/KXE modules still need native linking and validation.
+> combined Eclipse `main.dol` plus all four Kuribo modules. Super Mario Eclipse
+> is not considered playable yet: the complete module survives a headless boot
+> diagnostic, but rendering, menus, gameplay, saving, and shutdown still need
+> hands-on acceptance.
 > Nintendo Switch support is a later homebrew port.
 
 Eclipse Recompiled is an experimental native static-recompilation project for
@@ -40,8 +41,8 @@ See [the current technical status](docs/ECLIPSE_STATUS.md) for exactly what
 builds, what remains, and the one-command Windows preparation workflow.
 Contributors working on the blocker should also read
 [the KXE compatibility notes](docs/KXE_FORMAT.md), which document the new
-clean-room parser, the integrated BSE lifecycle prototype, and the unresolved
-runtime export/linking work. The incomplete
+clean-room parser, deterministic BSE export recovery, and the integrated
+four-module lifecycle prototype. The incomplete
 [Super Mario Sunshine decompilation](https://github.com/doldecomp/sms) is used
 as a readable research and symbol reference; it does not replace DolRecomp.
 
