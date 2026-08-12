@@ -41,6 +41,10 @@ Last verified: August 12, 2026.
   `0x817f0000`, 4 code ranges, 2,843 SMC ranges, and 269 chunks. The hardened
   build, including runtime name lookup, also remained active for a bounded
   30-second headless diagnostic with no immediate error.
+- The reviewed ModernGekko patch stack now includes a reproducible direct-DOL
+  bridge: `--boot-dol` attaches the extracted volume, recreates the guest disc
+  ID/FST boot records, and prepares EXI/memory-card startup. This removes a
+  runtime plumbing gap; it does not yet demonstrate a complete Eclipse boot.
 
 None of the private extraction, generated game code, or compiled game module
 is committed or distributable from this repository.
@@ -58,8 +62,9 @@ The next concrete milestone is visible Windows acceptance: confirm rendering,
 reach Eclipse's menus, enter gameplay, and diagnose any runtime patch or
 unsupported-instruction failures encountered along that path.
 See [the KXE compatibility notes](KXE_FORMAT.md) for the verified format,
-conversion path, and remaining runtime boundary. A diagnostic DOL-only launch
-may fail; it is not presented as a playable build.
+conversion path, and remaining runtime boundary. The direct-DOL launch is still
+a diagnostic path until Windows reaches a rendered menu and controllable
+gameplay.
 
 ## Reproducible Windows command
 

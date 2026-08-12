@@ -1,0 +1,111 @@
+diff --git a/include/moderngekko/runtime.hpp b/include/moderngekko/runtime.hpp
+index f6bc86c..128aafb 100644
+--- a/include/moderngekko/runtime.hpp
++++ b/include/moderngekko/runtime.hpp
+@@ -57,6 +57,10 @@ struct RuntimeConfig
+   // Optional original disc image used for boot and runtime DVD reads. The
+   // extracted root remains the source of module-validation metadata.
+   std::filesystem::path disc_image;
++  // Optional DOL/ELF to load directly while using game_root as the emulated
++  // GameCube disc. This is used by recompiled builds whose executable is not
++  // the original sys/main.dol.
++  std::filesystem::path boot_executable;
+   std::filesystem::path user_directory;
+   ModuleSource module;
+   std::vector<std::filesystem::path> mod_directories;
+diff --git a/src/runtime/dolphin_runtime.cpp b/src/runtime/dolphin_runtime.cpp
+index 1ddc25c..c6a0991 100644
+--- a/src/runtime/dolphin_runtime.cpp
++++ b/src/runtime/dolphin_runtime.cpp
+@@ -21,6 +21,7 @@
+ #include "Core/PowerPC/PowerPC.h"
+ #include "Core/PowerPC/StaticRecomp/StaticRecompModuleSource.h"
+ #include "Core/System.h"
++#include "DiscIO/Volume.h"
+ #include "DolphinNoGUI/Platform.h"
+ #include "UICommon/UICommon.h"
+ #include "VideoCommon/PerformanceMetrics.h"
+@@ -41,6 +42,7 @@ extern "C" void ModernGekkoSetIOSRenderSurface(void* surface);
+ #include <cmath>
+ #include <cstddef>
+ #include <cstdio>
++#include <cstdlib>
+ #include <fmt/format.h>
+ #include <mutex>
+ #include <thread>
+@@ -205,6 +207,16 @@ RuntimeCreateResult Runtime::Create(RuntimeConfig config) {
+     config.disc_image = disc_image;
+   }
+
++  if (!config.boot_executable.empty()) {
++    std::error_code ec;
++    const auto boot_executable =
++        std::filesystem::weakly_canonical(config.boot_executable, ec);
++    if (ec || !std::filesystem::is_regular_file(boot_executable))
++      return {{}, RuntimeError{RuntimeErrorCode::InvalidGame,
++                               "boot executable is not a readable file"}};
++    config.boot_executable = boot_executable;
++  }
++
+   const ModernGekkoModuleRequirements requirements = {
+       MODERNGEKKO_CPU_ABI_VERSION, static_cast<std::uint32_t>(sizeof(CPUState)),
+       inspected.metadata->disc_id.c_str()};
+@@ -424,14 +436,35 @@ RuntimeRunResult Runtime::Run() {
+   std::unique_ptr<BootParameters> boot;
+   {
+     std::lock_guard lock(s_runtime_mutex);
+-    const std::filesystem::path& boot_path = m_impl->config.disc_image.empty() ?
++    std::filesystem::path boot_path = m_impl->config.disc_image.empty() ?
+         m_impl->metadata.main_dol : m_impl->config.disc_image;
++    const bool booting_executable = !m_impl->config.boot_executable.empty();
++    if (booting_executable)
++      boot_path = m_impl->config.boot_executable;
+     if (s_boot_session_data)
+       boot = BootParameters::GenerateFromFile(
+           boot_path.string(), std::move(*s_boot_session_data));
+     else
+-      boot = BootParameters::GenerateFromFile(boot_path.string());
++      boot = BootParameters::GenerateFromFile(boot_path.string());
+     s_boot_session_data.reset();
++    if (booting_executable && boot &&
++        std::holds_alternative<BootParameters::Executable>(boot->parameters))
++    {
++      // DirectoryBlobReader is selected from the extracted sys/main.dol
++      // path; passing the directory itself has no recognizable extension.
++      auto volume = DiscIO::CreateDiscForCore(
++          (m_impl->config.game_root / "sys" / "main.dol").string());
++      if (!volume)
++      {
++        boot.reset();
++      }
++      else
++      {
++        auto& executable = std::get<BootParameters::Executable>(boot->parameters);
++        executable.disc = BootParameters::Disc{
++            m_impl->config.game_root.string(), std::move(volume), {}};
++      }
++    }
+   }
+   if (!boot) {
+     m_impl->running = false;
+diff --git a/tools/moderngekko_run.cpp b/tools/moderngekko_run.cpp
+index b3fef38..4496442 100644
+--- a/tools/moderngekko_run.cpp
++++ b/tools/moderngekko_run.cpp
+@@ -32,6 +32,7 @@ void HandleStopSignal(int) { s_stop_requested = 1; }
+ void Usage() {
+   std::cerr << "usage: " MODERNGEKKO_RUNNER_NAME
+                " [--game <extracted-root>] [--module <path>]\n"
++               "       [--boot-dol <path>]\n"
+                "       [--user-dir <path>] [--title <text>]\n"
+                "       [--graphics <backend>] [--audio <backend>]\n"
+                "       [--mods <directory>] [--no-mods]\n"
+@@ -147,6 +148,8 @@ int RunMain(int argc, char **argv) {
+     };
+     if (arg == "--game")
+       config.game_root = value("--game");
++    else if (arg == "--boot-dol")
++      config.boot_executable = value("--boot-dol");
+     else if (arg == "--module")
+       module_path = value("--module");
+     else if (arg == "--user-dir")

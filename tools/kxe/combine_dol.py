@@ -115,6 +115,8 @@ def _lifecycle_section(
     arena_hi: int,
     modules: Sequence[tuple[int, int]],
     resume_address: int | None,
+    loader_init_address: int | None,
+    loader_resume_address: int | None,
 ) -> bytes:
     """Build boot/lifecycle code plus a 512-entry export capture table."""
 
@@ -122,6 +124,7 @@ def _lifecycle_section(
     recorder_address = section_address + 0x100
     context_address = section_address + 0x140
     registry_address = section_address + 0x200
+    loader_prelude_address = section_address + 0x300
 
     boot = _boot_trampoline(original_entry, arena_hi)
     lifecycle_words: tuple[int, ...] = ()
@@ -198,6 +201,27 @@ def _lifecycle_section(
         raise ValueError("too many module contexts for the guest shim")
 
     section = bytearray(0x1220)
+
+    if loader_init_address is not None:
+        if loader_resume_address is None:
+            raise ValueError("a loader initialization call requires a resume address")
+        # The original Kuribo loader first calls JKRExpHeap::createRoot(1, 0),
+        # then loads its kernel and modules.  Keep only that allocator setup;
+        # the rest of the dynamic loader is replaced by the native module.
+        loader_words = (
+            0x38600001,  # li r3, 1
+            0x38800000,  # li r4, 0
+            _lis(12, loader_init_address),
+            _ori(12, 12, loader_init_address),
+            0x7D8903A6,  # mtctr r12
+            0x4E800421,  # bctrl
+            _lis(12, loader_resume_address),
+            _ori(12, 12, loader_resume_address),
+            0x7D8903A6,  # mtctr r12
+            0x4E800420,  # bctr
+        )
+        struct.pack_into(f">{len(loader_words)}I", section, 0x300, *loader_words)
+
     section[0 : len(boot)] = boot
     struct.pack_into(f">{len(lifecycle_words)}I", section, 0x20, *lifecycle_words)
     struct.pack_into(f">{len(getter_words)}I", section, 0xA0, *getter_words)
@@ -254,6 +278,12 @@ def _relative_branch(source: int, target: int) -> int:
     return 0x48000000 | (delta & 0x03FFFFFC)
 
 
+def _patch_branch(output: bytearray, source: int, target: int) -> None:
+    """Replace one in-image instruction with a non-linking relative branch."""
+
+    struct.pack_into(">I", output, _guest_file_offset(output, source), _relative_branch(source, target))
+
+
 def combine_dol(
     base_dol: bytes,
     kxe: KxeFile,
@@ -263,6 +293,9 @@ def combine_dol(
     lifecycle_hook_address: int | None = None,
     lifecycle_resume_address: int | None = None,
     additional_modules: Sequence[ModulePlacement] = (),
+    loader_hook_address: int | None = None,
+    loader_resume_address: int | None = None,
+    loader_init_address: int | None = None,
 ) -> bytes:
     """Return a DOL containing the original image plus relocated KXE code."""
 
@@ -283,22 +316,33 @@ def combine_dol(
         module_base,
         tuple((item.address, item.entry) for item in placements),
         lifecycle_resume_address,
+        loader_init_address,
+        loader_resume_address,
     )
     trampoline_range = DolRange("boot trampoline", trampoline_address, len(trampoline))
     _check_candidate(kxe_range, existing)
     _check_candidate(trampoline_range, existing + [kxe_range])
 
     output = bytearray(base_dol)
+    if (loader_hook_address is None) != (loader_resume_address is None):
+        raise ValueError("a loader hook requires a resume address")
+    if loader_init_address is not None and loader_hook_address is None:
+        raise ValueError("a loader initialization call requires a loader hook")
+    if loader_hook_address is not None:
+        # The original Kuribo call happens before the game creates its JKR
+        # heaps. Preserve its createRoot call in the shim, then let the
+        # game's normal heap setup continue before its prologue is entered.
+        loader_target = (
+            trampoline_address + 0x300
+            if loader_init_address is not None
+            else loader_resume_address
+        )
+        assert loader_target is not None
+        _patch_branch(output, loader_hook_address, loader_target)
     if lifecycle_hook_address is not None:
         if lifecycle_resume_address is None:
             raise ValueError("a lifecycle hook requires a resume address")
-        hook_offset = _guest_file_offset(output, lifecycle_hook_address)
-        struct.pack_into(
-            ">I",
-            output,
-            hook_offset,
-            _relative_branch(lifecycle_hook_address, trampoline_address + 0x20),
-        )
+        _patch_branch(output, lifecycle_hook_address, trampoline_address + 0x20)
     for slot, address, payload in (
         (slots[0], module_base, module_blob),
         (slots[1], trampoline_address, trampoline),
@@ -343,6 +387,21 @@ def main() -> int:
     parser.add_argument("--trampoline", required=True, type=lambda value: int(value, 0))
     parser.add_argument("--lifecycle-hook", type=lambda value: int(value, 0))
     parser.add_argument("--lifecycle-resume", type=lambda value: int(value, 0))
+    parser.add_argument(
+        "--loader-hook",
+        type=lambda value: int(value, 0),
+        help="original Kuribo loader call to skip before game heap setup",
+    )
+    parser.add_argument(
+        "--loader-resume",
+        type=lambda value: int(value, 0),
+        help="instruction after --loader-hook",
+    )
+    parser.add_argument(
+        "--loader-init",
+        type=lambda value: int(value, 0),
+        help="allocator initialization function retained from the Kuribo loader",
+    )
     parser.add_argument("--imports-json", type=Path)
     parser.add_argument(
         "--module",
@@ -371,6 +430,9 @@ def main() -> int:
             args.lifecycle_hook,
             args.lifecycle_resume,
             additions,
+            args.loader_hook,
+            args.loader_resume,
+            args.loader_init,
         )
     except (ValueError, RelocationError) as error:
         parser.error(str(error))

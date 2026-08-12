@@ -17,7 +17,7 @@ Recreate the complete ignored dependency tree at the reviewed revisions:
 
 The bootstrap script clones ModernGekko recursively (including its Dolphin and
 DolRecomp submodules) plus ModernGekko-Template, verifies their exact commits, and applies
-the two complete patch snapshots listed in [the patch index](../patches/README.md).
+the complete runtime patch snapshots listed in [the patch index](../patches/README.md).
 It is idempotent for an unchanged prepared tree and never downloads game data.
 If an existing ignored checkout is on another revision or a patch cannot be
 applied cleanly, it stops instead of modifying an unknown tree.

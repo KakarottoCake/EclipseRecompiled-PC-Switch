@@ -157,7 +157,8 @@ supported game revision:
 ```
 
 `bootstrap-dependencies.sh` clones the pinned public toolchain revisions and
-applies the two complete SunPad patch snapshots. It never downloads game data.
+applies the reviewed SunPad/Eclipse patch snapshots, including the direct-DOL
+and extracted-volume bridge. It never downloads game data.
 `prepare-game.sh` verifies the exact supported SHA-256, builds the desktop
 tools, extracts the image locally, and generates the host module inputs used
 by the Apple builds. All outputs stay under ignored local paths. See
@@ -393,7 +394,7 @@ research rather than promised features.
 
 | Path | Purpose |
 |---|---|
-| [`scripts/bootstrap-dependencies.sh`](scripts/bootstrap-dependencies.sh) | Clone reviewed upstream revisions and apply the complete patch snapshots |
+| [`scripts/bootstrap-dependencies.sh`](scripts/bootstrap-dependencies.sh) | Clone reviewed upstream revisions and apply the complete runtime patch snapshots |
 | [`scripts/prepare-game.sh`](scripts/prepare-game.sh) | Validate the supported local image and generate ignored game/module inputs |
 | [`scripts/ios-build-core.sh`](scripts/ios-build-core.sh) | Build and provision the Simulator core/module |
 | [`scripts/ios-build-core-device.sh`](scripts/ios-build-core-device.sh) | Build and provision the physical-device core/module |

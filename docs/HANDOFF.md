@@ -16,10 +16,16 @@ From the repository root:
 ```
 
 The first command recreates the ignored public dependency tree at exact
-reviewed commits and applies the two complete SunPad patch snapshots. The
-second verifies the supported image SHA-256, builds the desktop tools, extracts
+reviewed commits and applies the complete SunPad/Eclipse runtime patch
+snapshots. The second verifies the supported image SHA-256, builds the desktop tools, extracts
 the image locally, and produces the generated module inputs. Neither command
 downloads or commits game data.
+
+For Eclipse Windows bring-up, the same dependency stack now includes a
+diagnostic direct-DOL path (`--boot-dol`) that mounts the extracted volume and
+recreates the guest disc/FST and EXI startup records. It is runtime plumbing,
+not a playable-game claim; menu, controller, graphics, save, and shutdown
+acceptance remain open.
 
 Build the desired development target after preparation:
 
