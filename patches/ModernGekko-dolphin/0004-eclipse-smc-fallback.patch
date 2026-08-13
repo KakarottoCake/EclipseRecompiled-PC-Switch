@@ -1,16 +1,19 @@
 diff --git a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_Run.cpp b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_Run.cpp
 --- a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_Run.cpp
 +++ b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_Run.cpp
-@@ -154,7 +154,18 @@ void StaticRecompCore::Run()
+@@ -158,7 +158,20 @@ void StaticRecompCore::Run()
          // SingleStepInner delivers synchronous exceptions itself; external
          // interrupts are delivered at slice start, as in Interpreter::Run.
 -        if (m_module_active && IsForcedFallbackAddress(ppc.pc))
-+        // Keep modified chunks in the interpreter.  The fallback JIT can run
-+        // ordinary OS code, but it has no static-recomp dispatch boundary for
-+        // a chunk that was demoted after self-modifying-code verification.
-+        // Without this check it may stay inside the stale block indefinitely.
++        // Failed chunks must run through the interpreter, while ordinary host
++        // code can still use Dolphin's fallback JIT. The JIT is kept at
++        // module boundaries so it cannot continue through a chunk whose
++        // runtime bytes no longer match the generated native code.
 +        const int fallback_chunk = ChunkIndexOf(ppc.pc);
-+        if (fallback_chunk >= 0 || (m_module_active && IsForcedFallbackAddress(ppc.pc)))
++        const bool forced_fallback = m_module_active && IsForcedFallbackAddress(ppc.pc);
++        const bool force_interpreter =
++            forced_fallback || (fallback_chunk >= 0 && !DispatchableAt(ppc.pc)) || !m_fallback_jit;
++        if (force_interpreter)
          {
 -          ppc.downcount -= interpreter.SingleStepInner();
 -          ++m_fallback_steps;
@@ -20,24 +23,20 @@ diff --git a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_Run.cpp b/So
 +            ++m_fallback_steps;
 +          } while (ppc.downcount > 0 && *state_ptr == CPU::State::Running &&
 +                   !(ppc.Exceptions & SYNC_EXCEPTION_MASK) && !IsHostCallAddress(ppc.pc) &&
-+                   (fallback_chunk < 0 || ChunkIndexOf(ppc.pc) == fallback_chunk) &&
-+                   !DispatchableAt(ppc.pc));
++                   (forced_fallback || fallback_chunk < 0 || !DispatchableAt(ppc.pc)));
          }
 diff --git a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore.cpp b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore.cpp
 --- a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore.cpp
 +++ b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore.cpp
-@@ -129,8 +129,13 @@ bool StaticRecompCore::ShouldYieldAt(u32 address)
+@@ -129,8 +129,10 @@ bool StaticRecompCore::ShouldYieldAt(u32 address)
    if (m_host_call_passthrough && m_host_call_passthrough_pc == address)
    {
      m_host_call_passthrough = false;
      return false;
    }
 -  if (m_module_active && DispatchableAt(address))
-+  // The fallback JIT must yield at every module-covered address, including a
-+  // chunk that failed SMC verification.  Otherwise a JIT block entered from
-+  // neighboring OS code can continue executing stale native code across the
-+  // static-recomp boundary before Run() gets a chance to select the
-+  // interpreter.
++  // Yield at every module boundary so fallback-JIT blocks cannot cross from
++  // ordinary host code into a chunk whose guest bytes were rewritten.
 +  if (m_module_active && ChunkIndexOf(address) >= 0)
      return true;
    return IsHostCallAddress(address);

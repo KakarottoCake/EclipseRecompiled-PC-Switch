@@ -120,6 +120,8 @@ apply_patch_once "$MG/vendor/dolphin" \
   "$ROOT/patches/ModernGekko-dolphin/0004-eclipse-smc-fallback.patch"
 apply_patch_once "$MG/vendor/dolphin" \
   "$ROOT/patches/ModernGekko-dolphin/0005-eclipse-smc-sticky-fail.patch"
+apply_patch_once "$MG/vendor/dolphin" \
+  "$ROOT/patches/ModernGekko-dolphin/0006-eclipse-mutable-chunks.patch"
 verify_patch_scope "$MG" \
   vendor/dolphin \
   "$ROOT/patches/ModernGekko/0001-sunpad-apple-runtime.patch" \
@@ -131,6 +133,7 @@ verify_patch_scope "$MG/vendor/dolphin" \
   "$ROOT/patches/ModernGekko-dolphin/0002-eclipse-windows-runtime.patch" \
   "$ROOT/patches/ModernGekko-dolphin/0003-eclipse-direct-dol.patch" \
   "$ROOT/patches/ModernGekko-dolphin/0004-eclipse-smc-fallback.patch" \
-  "$ROOT/patches/ModernGekko-dolphin/0005-eclipse-smc-sticky-fail.patch"
+  "$ROOT/patches/ModernGekko-dolphin/0005-eclipse-smc-sticky-fail.patch" \
+  "$ROOT/patches/ModernGekko-dolphin/0006-eclipse-mutable-chunks.patch"
 
 echo "ModernGekko dependencies are pinned and patched for SunPad and Eclipse."

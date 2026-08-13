@@ -217,8 +217,8 @@ blocked until it passes.
 
 Linux follows after the Windows gate. Linux support must share the generated
 game/runtime behavior rather than become an independent port. Do not spend
-platform bring-up time here while the Windows build is still SMC-bound or lacks
-hands-on gameplay acceptance.
+platform bring-up time here while the Windows build lacks hands-on gameplay
+acceptance.
 
 ## Milestone 6: Nintendo Switch technical proof (deferred)
 
@@ -265,14 +265,13 @@ Tasks:
 
 ## Immediate Windows PC work queue
 
-1. Reduce the SMC-heavy Windows startup enough to reach a rendered frame.
-2. Confirm menus, file selection, Delfino Plaza, and a representative Eclipse
+1. Confirm menus, file selection, Delfino Plaza, and a representative Eclipse
    area with a real Windows renderer.
-3. Exercise keyboard, SDL gamepads, and a Nintendo/Mayflash adapter, including
+2. Exercise keyboard, SDL gamepads, and a Nintendo/Mayflash adapter, including
    analog L/R trigger pressure and rumble.
-4. Verify saves, area transitions, shutdown, and repeatable cold starts.
-5. Make the launcher and package self-explanatory for a non-developer user.
-6. Run the complete repository/build/package audits from a clean Windows clone.
+3. Verify saves, area transitions, shutdown, and repeatable cold starts.
+4. Make the launcher and package self-explanatory for a non-developer user.
+5. Run the complete repository/build/package audits from a clean Windows clone.
 
 Do not begin Linux or Switch renderer work before the Windows PC gate passes.
 Doing so would combine game, module-loader, renderer, audio, input, and

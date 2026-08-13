@@ -235,6 +235,38 @@ class KxeParserTests(unittest.TestCase):
         getter = struct.unpack_from(">24I", combined, shim_offset + 0xA0)
         self.assertEqual(getter[19], 0x4200FFD0)
 
+    def test_combined_dol_applies_validated_runtime_word_patch(self):
+        base = bytearray(0x120)
+        struct.pack_into(">I", base, 0x00, 0x100)
+        struct.pack_into(">I", base, 0x48, 0x80003100)
+        struct.pack_into(">I", base, 0x90, 0x20)
+        struct.pack_into(">I", base, 0xE0, 0x80003100)
+        struct.pack_into(">I", base, 0x104, 0x12345678)
+        combined = combine_dol(
+            base,
+            parse_kxe(make_kxe([])),
+            0x81700000,
+            0x81780000,
+            word_patches=((0x80003104, 0x12345678, 0x9ABCDEF0),),
+        )
+        self.assertEqual(struct.unpack_from(">I", combined, 0x104)[0], 0x9ABCDEF0)
+
+    def test_combined_dol_rejects_runtime_word_patch_baseline_mismatch(self):
+        base = bytearray(0x120)
+        struct.pack_into(">I", base, 0x00, 0x100)
+        struct.pack_into(">I", base, 0x48, 0x80003100)
+        struct.pack_into(">I", base, 0x90, 0x20)
+        struct.pack_into(">I", base, 0xE0, 0x80003100)
+        struct.pack_into(">I", base, 0x104, 0x12345678)
+        with self.assertRaisesRegex(ValueError, "word patch at 0x80003104"):
+            combine_dol(
+                base,
+                parse_kxe(make_kxe([])),
+                0x81700000,
+                0x81780000,
+                word_patches=((0x80003104, 0x87654321, 0x9ABCDEF0),),
+            )
+
     def test_combined_dol_initializes_multiple_kxe_modules(self):
         base = bytearray(0x120)
         struct.pack_into(">I", base, 0x00, 0x100)

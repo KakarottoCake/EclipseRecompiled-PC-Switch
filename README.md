@@ -2,12 +2,17 @@
 
 > [!IMPORTANT]
 > This fork is at the **bring-up stage**. The native Windows host now builds a
-> combined Eclipse `main.dol` plus all four Kuribo modules. Super Mario Eclipse
-> is not considered playable yet: the complete module survives a headless boot
-> diagnostic, but rendering, menus, gameplay, saving, and shutdown still need
-> hands-on acceptance.
+> combined Eclipse `main.dol` plus all four Kuribo modules, and the PC runtime
+> reaches a real Vulkan window titled `Super Mario Eclipse`. Super Mario
+> Eclipse is not considered playable yet: menus, gameplay, saving, shutdown,
+> and controller acceptance still need hands-on testing.
 > **Current priority:** mature the Windows PC build first. Nintendo Switch
 > support is explicitly deferred until the PC acceptance gates pass.
+
+The PC preparation step includes a version-locked runtime patch manifest for
+the exact supported Eclipse 1.1.0 DOL. Every entry checks the original word
+before applying the loader/module rewrite observed during bring-up; a different
+DOL revision is rejected rather than silently patched.
 
 Eclipse Recompiled is an experimental native static-recompilation project for
 **Super Mario Eclipse**. The eventual target platforms are Windows/Linux PC and
