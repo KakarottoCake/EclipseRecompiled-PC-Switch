@@ -54,8 +54,16 @@ Last verified: August 12, 2026.
 - A failed SMC verification is now sticky for the current run: repeated cache
   invalidations do not re-hash or re-log the same failed chunk, while an
   explicit cache clear or newly discovered REL mapping can re-enable
-  verification. A 60-second Windows diagnostic reached 28 unique SMC failures
-  and remained alive; it still did not reach a rendered frame.
+  verification. The exact Eclipse 1.1.0 DOL also has a checked-in,
+  baseline-validated runtime word-patch manifest for the 295 loader/module
+  rewrites observed during bring-up. A clean Windows build now creates a real
+  Vulkan window titled `Super Mario Eclipse`, reaches roughly 7–10 FPS in the
+  smoke test, and completes that run without an SMC mismatch. This is a
+  rendered-output milestone, not yet menu/gameplay acceptance.
+- Three code-only KXE chunks that also hold writable loader tables are now
+  explicitly marked mutable in the module table generator. Their runtime hash
+  is not compared while executable chunks remain protected by the normal SMC
+  guard.
 
 None of the private extraction, generated game code, or compiled game module
 is committed or distributable from this repository.
@@ -65,14 +73,17 @@ is committed or distributable from this repository.
 Eclipse is not only a modified `main.dol`. It loads Kuribo's kernel and four
 PowerPC `.kxe` modules at runtime. Those modules contain Better Sunshine
 Engine, the moveset, mirror mode, and Eclipse itself. The prototype now
-statically replaces that loader and links all four, but a headless process
-remaining alive does not prove that their runtime patches, rendering, or game
-logic are correct.
+statically replaces that loader and links all four. A live Vulkan window proves
+the host renderer is active, but it does not prove that their runtime patches,
+menus, gameplay, or save logic are correct.
 
-The next concrete milestone is visible Windows acceptance: finish the slow
-SMC-heavy startup, confirm rendering, reach Eclipse's menus, enter gameplay,
-and diagnose any runtime patch or unsupported-instruction failures encountered
-along that path.
+The runtime patch manifest is intentionally tied to the exact supported DOL
+hash and each entry validates its original instruction before rewriting it;
+it is not a generic patch list for arbitrary Eclipse revisions. The next
+concrete milestone is interactive Windows acceptance: get past the current
+slow startup, confirm the visible Eclipse menu, exercise a modern
+controller and a GameCube adapter, enter gameplay, and diagnose any runtime
+patch or unsupported-instruction failures encountered along that path.
 See [the KXE compatibility notes](KXE_FORMAT.md) for the verified format,
 conversion path, and remaining runtime boundary. The direct-DOL launch is still
 a diagnostic path until Windows reaches a rendered menu and controllable
@@ -92,6 +103,20 @@ CMake 3.31+, Ninja, and Python 3. Then run from PowerShell:
 The first run downloads pinned open-source dependencies and takes several
 minutes. It never downloads a game image. Later runs reuse the ignored local
 checkouts and build outputs.
+
+For the current Windows smoke run, launch the generated files with the Vulkan
+backend:
+
+```powershell
+.\out\moderngekko-windows\EclipseRecompiled-run.exe `
+  --game .\out\eclipse-combined-game `
+  --boot-dol .\out\eclipse-combined\main.dol `
+  --module .\out\eclipse-combined-module-windows\gGMSE04_recomp.dll `
+  --graphics Vulkan --no-mods
+```
+
+This is intentionally a developer smoke command until menu, controller,
+gameplay, save, and shutdown acceptance is complete.
 
 ## Known upstream test issues
 

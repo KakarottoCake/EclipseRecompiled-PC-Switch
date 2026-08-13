@@ -20,7 +20,7 @@ diff --git a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_SMC.cpp b/So
  
 -    if (m_chunk_state[i] != CHUNK_UNVERIFIED)
 +    // A chunk that has already failed verification is conservatively pinned to
-+    // the interpreter for this run.  Re-invalidating the same patched code
++    // the interpreter for this run. Re-invalidating the same patched code
 +    // cannot make the generated native block valid again, and repeatedly
 +    // hashing/logging it only adds startup cost. ClearCache or a discovered REL
 +    // remap explicitly resets this state when a fresh verification is useful.
@@ -45,3 +45,19 @@ diff --git a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore.h b/Source/C
 +  // SMC) marks it Failed and conservatively keeps it interpreter-only until an
 +  // explicit cache clear or REL remap resets the verification state.
    enum ChunkState : u8
+diff --git a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_SMC.cpp b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_SMC.cpp
+--- a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_SMC.cpp
++++ b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_SMC.cpp
+@@ -299,4 +299,12 @@ void StaticRecompCore::VerifyChunk(u32 index)
+     return;
+   }
++  // A zero module hash explicitly marks a mixed code/data chunk as mutable.
++  // These chunks remain dispatchable, but their loader tables or runtime
++  // bytes are intentionally excluded from the SMC hash check.
++  if (m_module->chunk_hashes[index] == 0)
++  {
++    m_chunk_state[index] = CHUNK_VERIFIED;
++    return;
++  }
+ 
+   // FNV-1a 64, matching gen_module_tables.py.

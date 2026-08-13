@@ -16,10 +16,11 @@ $bse = Join-Path $mods 'BetterSunshineEngine.kxe'
 $moveset = Join-Path $mods 'BetterSunshineMoveset.kxe'
 $mirror = Join-Path $mods 'MirrorMode.kxe'
 $eclipse = Join-Path $mods 'SuperMarioEclipse.kxe'
+$wordPatches = Join-Path $root 'tools\kxe\eclipse_pc_runtime_patches.json'
 $dolRecomp = Join-Path $root 'out\dolrecomp-windows\dolrecomp.exe'
 $expectedDolSha256 = '5a146d7d8b2c8244a6188beb1f7c9b738b13897eb0cdacc02283a8a810cac134'
 
-foreach ($required in @($mainDol, $map, $bse, $moveset, $mirror, $eclipse, $dolRecomp)) {
+foreach ($required in @($mainDol, $map, $bse, $moveset, $mirror, $eclipse, $wordPatches, $dolRecomp)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Missing prerequisite: $required. Run prepare-eclipse-windows.ps1 first."
     }
@@ -35,6 +36,7 @@ $generatedRoot = Join-Path $output 'recompiled'
 $generated = Join-Path $generatedRoot 'generated'
 $moduleSource = Join-Path $root 'ref\ModernGekko\vendor\dolphin\module-template'
 $moduleBuild = Join-Path $root 'out\eclipse-combined-module-windows'
+$mutableChunks = '0x8163C000,0x81674000,0x816AC000'
 
 Push-Location $root
 try {
@@ -44,6 +46,7 @@ try {
         --loader-hook 0x802A744C --loader-resume 0x802A7450 `
         --loader-init 0x802C0F8C `
         --lifecycle-hook 0x802A746C --lifecycle-resume 0x802A7470 `
+        --word-patches $wordPatches `
         --module "$moveset@0x81673000" `
         --module "$mirror@0x8167A000" `
         --module "$eclipse@0x8167D000"
@@ -59,7 +62,8 @@ try {
         "-DPython3_EXECUTABLE=$script:NativePython" -DGAME_ID=GMSE04 `
         "-DGENERATED_DIR=$generated" `
         "-DGXRUNTIME_DIR=$(Join-Path $root 'ref\ModernGekko\vendor\dolphin\GXRuntime')" `
-        "-DCHASSIS_ABI_DIR=$(Join-Path $root 'ref\ModernGekko\vendor\dolphin\Source\Core\Core\PowerPC\StaticRecomp')"
+        "-DCHASSIS_ABI_DIR=$(Join-Path $root 'ref\ModernGekko\vendor\dolphin\Source\Core\Core\PowerPC\StaticRecomp')" `
+        "-DRECOMPCORE_MUTABLE_CHUNKS=$mutableChunks"
     if ($LASTEXITCODE -ne 0) { throw 'Combined module configuration failed.' }
     & $script:CMake --build $moduleBuild --config Release -j $Jobs
     if ($LASTEXITCODE -ne 0) { throw 'Combined module build failed.' }

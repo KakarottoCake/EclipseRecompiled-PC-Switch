@@ -1,6 +1,6 @@
 # Known Issues
 
-Last updated: 2026-08-11
+Last updated: 2026-08-12
 
 ## iOS / iPadOS
 
@@ -142,14 +142,14 @@ Last updated: 2026-08-11
 2. **SMC warning list present** — DolRecomp reported possible runtime
    code-patching ranges for GMSE01; no dedicated Sunshine patch set applied.
 3. **Verbose runtime logging is sparse** after module load.
-4. **Eclipse direct-DOL startup is still SMC-bound** — the native module now
-   yields modified chunks safely to bounded Dolphin-interpreter slices, but
-   Eclipse's startup path touches enough code-patching ranges that a Windows
-   run can spend minutes before a rendered frame. Failed chunks are kept
-   interpreter-only for the run to avoid repeated hash/log work; an explicit
-   cache clear or REL remap is required before they are verified again. Do not
-   treat process liveness as playable acceptance; the next optimization must
-   preserve interpreter/JIT correctness while reducing this demoted-code cost.
+4. **Eclipse direct-DOL startup is rendered but not accepted as playable** — the
+   Windows PC runtime now applies the exact-image runtime patch manifest,
+   reaches a real Vulkan window, and has a clean 7–10 FPS smoke run. Startup is
+   still slow, and menu/gameplay, controller, save, and shutdown acceptance is
+   open. Failed executable chunks stay protected by the SMC guard, while the
+   three known mixed KXE code/data chunks use an explicit mutable policy. Do
+   not treat a live window or FPS title as playable acceptance; the next work
+   must prove input and in-game behavior without weakening the guards.
 
 ## Resolved / non-blocking observations
 

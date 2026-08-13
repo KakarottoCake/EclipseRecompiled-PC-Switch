@@ -284,6 +284,22 @@ def _patch_branch(output: bytearray, source: int, target: int) -> None:
     struct.pack_into(">I", output, _guest_file_offset(output, source), _relative_branch(source, target))
 
 
+def _apply_word_patches(
+    output: bytearray, patches: Sequence[tuple[int, int, int]]
+) -> None:
+    """Apply version-specific runtime hook words with baseline validation."""
+
+    for address, expected, value in patches:
+        offset = _guest_file_offset(output, address)
+        actual = _u32(output, offset)
+        if actual != expected:
+            raise ValueError(
+                f"word patch at 0x{address:08x} expected 0x{expected:08x}, "
+                f"found 0x{actual:08x}"
+            )
+        struct.pack_into(">I", output, offset, value)
+
+
 def combine_dol(
     base_dol: bytes,
     kxe: KxeFile,
@@ -296,6 +312,7 @@ def combine_dol(
     loader_hook_address: int | None = None,
     loader_resume_address: int | None = None,
     loader_init_address: int | None = None,
+    word_patches: Sequence[tuple[int, int, int]] = (),
 ) -> bytes:
     """Return a DOL containing the original image plus relocated KXE code."""
 
@@ -343,6 +360,7 @@ def combine_dol(
         if lifecycle_resume_address is None:
             raise ValueError("a lifecycle hook requires a resume address")
         _patch_branch(output, lifecycle_hook_address, trampoline_address + 0x20)
+    _apply_word_patches(output, word_patches)
     for slot, address, payload in (
         (slots[0], module_base, module_blob),
         (slots[1], trampoline_address, trampoline),
@@ -368,6 +386,28 @@ def _load_imports(path: Path | None) -> dict[str | int, int]:
         address = int(value, 0) if isinstance(value, str) else int(value)
         result[int(key, 0) if key.lower().startswith("0x") else key] = address
     return result
+
+
+def _load_word_patches(path: Path | None) -> tuple[tuple[int, int, int], ...]:
+    if path is None:
+        return ()
+    document = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(document, list):
+        raise ValueError("word patches JSON must be an array")
+    result: list[tuple[int, int, int]] = []
+    for index, item in enumerate(document):
+        if not isinstance(item, dict) or not {"address", "expected", "value"} <= item.keys():
+            raise ValueError(f"word patch {index} must contain address, expected, and value")
+        try:
+            address = int(item["address"], 0)
+            expected = int(item["expected"], 0)
+            value = int(item["value"], 0)
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"word patch {index} contains a non-integer field") from error
+        if address & 3 or not 0 <= expected <= 0xFFFFFFFF or not 0 <= value <= 0xFFFFFFFF:
+            raise ValueError(f"word patch {index} is not a valid aligned 32-bit patch")
+        result.append((address, expected, value))
+    return tuple(result)
 
 
 def _module_argument(value: str) -> tuple[Path, int]:
@@ -404,6 +444,11 @@ def main() -> int:
     )
     parser.add_argument("--imports-json", type=Path)
     parser.add_argument(
+        "--word-patches",
+        type=Path,
+        help="JSON array of expected/value guest instruction word patches",
+    )
+    parser.add_argument(
         "--module",
         type=_module_argument,
         action="append",
@@ -433,6 +478,7 @@ def main() -> int:
             args.loader_hook,
             args.loader_resume,
             args.loader_init,
+            _load_word_patches(args.word_patches),
         )
     except (ValueError, RelocationError) as error:
         parser.error(str(error))

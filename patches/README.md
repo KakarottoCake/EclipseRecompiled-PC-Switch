@@ -13,6 +13,7 @@ its ignored upstream trees:
 | `ModernGekko-dolphin/0003-eclipse-direct-dol.patch` | Patched `ModernGekko/vendor/dolphin` | Carries disc ID/FST records into direct-DOL boots and makes the EXI/memory-card startup path usable without the IPL/apploader |
 | `ModernGekko-dolphin/0004-eclipse-smc-fallback.patch` | Patched `ModernGekko/vendor/dolphin` | Keeps runtime-modified static-recomp chunks in Dolphin's interpreter instead of letting the fallback JIT execute stale native blocks |
 | `ModernGekko-dolphin/0005-eclipse-smc-sticky-fail.patch` | Patched `ModernGekko/vendor/dolphin` | Keeps a chunk that failed SMC verification interpreter-only for the run, avoiding repeated hash/log work until an explicit cache clear or REL remap |
+| `ModernGekko-dolphin/0006-eclipse-mutable-chunks.patch` | Patched `ModernGekko/vendor/dolphin` | Lets game-specific module builds mark mixed executable/data chunks as intentionally mutable instead of treating their loader tables as code corruption |
 
 These replace the earlier partial patch series. Required CoreAudio,
 mixer, platform-stub, frontend, build, and direct-DOL changes are no longer
@@ -37,9 +38,13 @@ the Eclipse PC module build, and the direct-DOL/extracted-volume bridge used by
 Eclipse. Direct-DOL support is a boot/runtime primitive, not proof that a
 particular recompiled game is fully playable: each game still needs its own
 module, symbols, input map, graphics validation, and end-to-end boot tests.
-A future game-specific address map, runtime code-patching range, HLE decision,
-MMIO route, or revision-specific workaround must remain clearly identified and
-reviewed rather than hidden in an unrelated platform edit.
+A separate exact-image Eclipse runtime word-patch manifest lives at
+`tools/kxe/eclipse_pc_runtime_patches.json`; it is deliberately outside the
+generic ModernGekko patch snapshots because those 295 instruction rewrites are
+specific to the supported Eclipse 1.1.0 DOL. A future game-specific address
+map, runtime code-patching range, HLE decision, MMIO route, or
+revision-specific workaround must remain clearly identified and reviewed
+rather than hidden in an unrelated platform edit.
 
 See [RESEARCH.md](../docs/RESEARCH.md) and
 [DEPENDENCIES.md](../docs/DEPENDENCIES.md) for architecture and provenance.
