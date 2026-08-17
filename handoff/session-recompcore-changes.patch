@@ -1,0 +1,637 @@
+diff --git a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore.cpp b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore.cpp
+index ed47204d2f..fb6381d3a4 100644
+--- a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore.cpp
++++ b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore.cpp
+@@ -4,6 +4,7 @@
+ #include "Core/PowerPC/StaticRecomp/StaticRecompCore.h"
+ 
+ #include <algorithm>
++#include <cstddef>
+ #include <cstdio>
+ #include <cstdlib>
+ #include <cstring>
+@@ -27,6 +28,13 @@
+ #endif
+ 
+ 
++// Generated code addresses chunk_valid by the offset DolRecomp's own copy of
++// CPUState computes, and the two copies only agree across the prefix ending at
++// exram_size. A same-size move past spr_read would slip through the descriptor's
++// cpu_state_size check and silently corrupt a hook pointer, so pin it here too.
++static_assert(offsetof(CPUState, chunk_valid) == offsetof(CPUState, exram_size) + 8,
++              "chunk_valid must directly follow exram_size to match DolRecomp's CPUState");
++
+ StaticRecompCore* g_static_recomp_core = nullptr;
+ 
+ u32 StaticRecompShouldYieldAt(u32 address)
+@@ -106,6 +114,26 @@ bool RelModulesValid(const StaticRecompModuleDesc& desc)
+   }
+   return true;
+ }
++
++bool WordPatchesValid(const StaticRecompModuleDesc& desc)
++{
++  if (desc.num_word_patches == 0)
++    return true;
++  if (!desc.word_patches)
++    return false;
++  for (u32 i = 0; i < desc.num_word_patches; ++i)
++  {
++    const auto& patch = desc.word_patches[i];
++    if ((patch.address & 3u) != 0 || patch.expected == patch.value ||
++        patch.value_mask == 0 ||
++        !AddressIsCovered(desc.code_ranges, desc.num_code_ranges, patch.address) ||
++        (i != 0 && desc.word_patches[i - 1].address >= patch.address))
++    {
++      return false;
++    }
++  }
++  return true;
++}
+ }  // namespace
+ 
+ bool StaticRecompCore::IsModuleActive() const
+@@ -131,7 +159,10 @@ bool StaticRecompCore::ShouldYieldAt(u32 address)
+     m_host_call_passthrough = false;
+     return false;
+   }
+-  if (m_module_active && DispatchableAt(address))
++  // Yield when fallback execution reaches a chunk that can resume in the
++  // native module. Failed SMC chunks remain in the fallback JIT; its cache is
++  // invalidated when their guest bytes change.
++  if (m_module_active && DispatchableAt(address) && !IsConfiguredFallbackAddress(address))
+     return true;
+   return IsHostCallAddress(address);
+ }
+@@ -184,11 +215,16 @@ void StaticRecompCore::Init()
+   m_lockstep_verifier = std::make_unique<StaticRecompLockstep::StaticRecompLockstepVerifier>(*this);
+   m_lockstep_verifier->Init();
+ 
+-#ifdef _M_ARM_64
+-  m_fallback_jit = std::make_unique<JitArm64>(m_system);
++  // STATICRECOMP_NO_FALLBACK_JIT reproduces the iOS execution contract
++  // (module + interpreter only) on desktop for parity testing.
++  if (!std::getenv("STATICRECOMP_NO_FALLBACK_JIT"))
++  {
++#if defined(_M_ARM_64) && !defined(__IPHONE_OS_VERSION_MIN_REQUIRED)
++    m_fallback_jit = std::make_unique<JitArm64>(m_system);
+ #elif defined(_M_X86_64)
+-  m_fallback_jit = std::make_unique<Jit64>(m_system);
++    m_fallback_jit = std::make_unique<Jit64>(m_system);
+ #endif
++  }
+   if (m_fallback_jit)
+   {
+     m_fallback_jit->SetStaticRecompFallback(true);
+@@ -202,12 +238,16 @@ void StaticRecompCore::Shutdown()
+   g_static_recomp_core = nullptr;
+   std::fprintf(stderr,
+                "[staticrecomp] shutdown: native=%llu fallback=%llu native_exc=%llu hook_fb=%llu "
+-               "smc_failed=%u verifications=%llu reverify_events=%llu bursts=%llu cycles=%llu\n",
++               "smc_failed=%u verifications=%llu reverify_events=%llu bursts=%llu cycles=%llu "
++               "chained=%llu\n",
+                (unsigned long long)m_native_dispatches, (unsigned long long)m_fallback_steps,
+                (unsigned long long)m_native_exceptions,
+                (unsigned long long)m_hook_fallback_instructions, m_failed_chunks,
+                (unsigned long long)m_verifications, (unsigned long long)m_reverify_events,
+-               (unsigned long long)m_bursts, (unsigned long long)m_charged_cycles);
++               (unsigned long long)m_bursts, (unsigned long long)m_charged_cycles,
++               // Chained links never pass through the dispatch loop, so `native`
++               // alone understates the work done once chaining is on.
++               (unsigned long long)m_chained_links);
+   std::vector<std::pair<u32, u64>> dispatch_samples(m_dispatch_samples.begin(),
+                                                     m_dispatch_samples.end());
+   std::sort(dispatch_samples.begin(), dispatch_samples.end(),
+@@ -282,7 +322,8 @@ void StaticRecompCore::LoadModule()
+   if (desc->cpu_state_size != sizeof(CPUState))
+     return reject(fmt::format("cpu_state_size {} != sizeof(CPUState) {}", desc->cpu_state_size,
+                               sizeof(CPUState)));
+-  if (!desc->dispatch || !desc->code_ranges || desc->num_code_ranges == 0)
++  if (!desc->dispatch || !desc->code_ranges || desc->num_code_ranges == 0 ||
++      !WordPatchesValid(*desc))
+     return reject("no dispatch entry or empty code ranges");
+   if (!std::memchr(desc->game_id, '\0', sizeof(desc->game_id)) || desc->game_id[0] == '\0')
+     return reject("invalid game_id");
+@@ -298,11 +339,29 @@ void StaticRecompCore::LoadModule()
+     return reject("malformed REL module metadata");
+   if (!AddressIsCovered(desc->code_ranges, desc->num_code_ranges, desc->entry_point))
+     return reject("entry point is not covered by the module");
+-  if (!game_id.empty() && game_id != desc->game_id)
++  if (!game_id.empty() && game_id != desc->game_id &&
++      !std::getenv("STATICRECOMP_IGNORE_GAME_ID"))
+     return reject(fmt::format("module game_id '{}' != running game '{}'", desc->game_id, game_id));
+ 
+   m_module = desc;
+   m_module_active = (desc != nullptr);
++
++  // Let the module chain cross-range indirect branches without unwinding to
++  // the dispatch loop. Not installing it is safe -- the module then declines
++  // to chain -- so every reason to withhold it can be conservative.
++  //
++  // REL address translation is the one hard blocker: the dispatch loop maps a
++  // runtime address through ResolveNativeAddress/TranslateRelAddress on both
++  // sides of every dispatch, and a chained link does neither. With a REL
++  // loaded, a chained branch would run the wrong code rather than fail.
++  if (desc->set_chain_tick)
++  {
++    if (desc->num_rel_modules != 0)
++      WARN_LOG_FMT(POWERPC, "[staticrecomp] chaining disabled: module declares REL sections");
++    else
++      desc->set_chain_tick(&StaticRecompCore::ChainTickThunk, this);
++  }
++  BuildRuntimePatchFilter();
+   m_chunk_state.assign(desc->num_chunk_ranges, CHUNK_UNVERIFIED);
+   m_chunk_host_call_state.assign(desc->num_chunk_ranges, 0);
+   m_effective_chunk_hashes.assign(desc->chunk_hashes,
+@@ -354,6 +413,7 @@ void StaticRecompCore::ClearCache()
+   if (!m_module)
+     return;
+   std::fill(m_chunk_state.begin(), m_chunk_state.end(), u8{CHUNK_UNVERIFIED});
++  RebuildChunkValidTable();
+   m_failed_chunks = 0;
+   ++m_reverify_events;
+ }
+diff --git a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore.h b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore.h
+index 28276fcd1c..41f1678283 100644
+--- a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore.h
++++ b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore.h
+@@ -54,6 +54,15 @@ public:
+   bool DispatchableAt(u32 address);
+   bool FastDispatchableAt(u32 address);
+   bool IsHostCallAddress(u32 address) const;
++
++  // Per-link bookkeeping for in-module branch chaining (module ABI v6). The
++  // module calls this between chained links in place of a full trip through
++  // the dispatch loop; it does the downcount and timebase work that loop would
++  // have done and returns false when the chassis needs control back.
++  //
++  // Static so it can be handed to the module as a plain function pointer.
++  static int ChainTickThunk(void* user, CPUState* ctx);
++  bool ChainTick();
+   bool ShouldYieldAt(u32 address);
+ 
+   void ClearCache() override;
+@@ -102,7 +111,8 @@ private:
+   // recorded hash of the original text. An icache invalidation touching a
+   // chunk resets it to Unverified (Dolphin invalidates while *loading* code,
+   // so invalidation alone must not retire coverage); a hash mismatch (real
+-  // SMC) marks it Failed, interpreter-only until the next invalidation.
++  // SMC) marks it Failed and keeps it on the invalidation-aware fallback JIT
++  // until an explicit cache clear or REL remap resets verification state.
+   enum ChunkState : u8
+   {
+     CHUNK_UNVERIFIED = 0,
+@@ -113,6 +123,8 @@ private:
+   void OnICacheInvalidate(u32 address, u32 length);
+   int ChunkIndexOf(u32 address);
+   bool IsForcedFallbackAddress(u32 address) const;
++  bool IsRuntimePatchAddress(u32 address) const;
++  bool IsConfiguredFallbackAddress(u32 address) const;
+   bool ChunkContainsHostCall(u32 index) const;
+   void VerifyChunk(u32 index);
+   bool ResolveNativeAddress(u32 runtime_address, u32* linked_address, u32* rel_section_index);
+@@ -162,11 +174,39 @@ private:
+   u64 m_native_exceptions = 0;
+   u64 m_hook_fallback_instructions = 0;
+   std::unordered_map<u32, u64> m_dispatch_samples;
++  // Stall diagnosis (gated on STATICRECOMP_STALL_TRACE). A hung guest cannot be
++  // told apart from a slow one by the PC alone, and a stalled emulator never
++  // reaches Shutdown() to print its counters, so the report has to happen from
++  // inside the run loop.
++  u64 m_stall_same_pc_dispatches = 0;  // consecutive dispatches that did not move PC
++  u64 m_stall_same_pc_bursts = 0;      // consecutive bursts that ended on the same PC
++  u32 m_stall_last_burst_pc = 0;
++  u32 m_stall_reports = 0;
+   u64 m_bursts = 0;          // SyncIn..SyncOut native runs (diagnostic)
+   u64 m_charged_cycles = 0;  // cycles flushed from module charges (diagnostic)
++  // Links the module executed without returning to the dispatch loop. These do
++  // not appear in m_native_dispatches, so a chained run looks misleadingly
++  // cheap unless both are read together.
++  u64 m_chained_links = 0;
++
++  // ctx->timebase is in TB ticks (1 tick per SystemTimers::TIMER_RATIO CPU
++  // cycles), while module charges are CPU cycles. Deriving in-burst TB from a
++  // SyncIn snapshot plus accumulated cycles keeps guest mftb monotonic and in
++  // agreement with GetFakeTimeBase() at burst boundaries.
++  u64 m_burst_tb_base = 0;    // GetFakeTimeBase() at the last SyncIn
++  u64 m_burst_tb_cycles = 0;  // CPU cycles charged since that snapshot
+ 
+   // D4 guard state: parallel to m_module->chunk_ranges.
+   std::vector<u8> m_chunk_state;
++  // One byte per guest instruction word (same indexing as m_chunk_lookup_table),
++  // non-zero where the covering chunk is CHUNK_VERIFIED. Generated code reads
++  // this at function entry through CPUState::chunk_valid, because a cross-range
++  // direct call bypasses DispatchableAt and would otherwise run stale code.
++  // Only the byte at each chunk's start address is ever read.
++  std::vector<u8> m_chunk_valid_bytes;
++  // Single funnel for chunk state changes so the byte table cannot drift.
++  void SetChunkState(u32 index, u8 state);
++  void RebuildChunkValidTable();
+   mutable std::vector<u8> m_chunk_host_call_state;
+   std::vector<StaticRecompRange> m_forced_fallback_ranges;
+   struct ActiveRelSection
+@@ -196,6 +236,24 @@ private:
+   // last hit short-circuits the chunk binary search on the hot path.
+   mutable u32 m_last_chunk_index = 0;
+ 
++  // 1 KB prefilter over the word-patch table (see IsRuntimePatchAddress). One
++  // bit per hashed patch address: a clear bit is a definitive "not patched",
++  // so the common case costs a multiply and a bit test instead of ~10
++  // unpredictable branches. Never yields a false negative, so the exact answer
++  // is unchanged; a set bit falls through to the binary search.
++  static constexpr u32 PATCH_FILTER_BITS = 8192;
++  static u32 PatchFilterBit(u32 address)
++  {
++    // Knuth multiplicative hash over the word index. A plain address mask
++    // would alias patches that share the low bits of a 32 KB window; patch
++    // sites cluster (several hooks per function), so the mix matters.
++    return static_cast<u32>(((address >> 2) * 2654435761u) >> 19);
++  }
++  u64 m_patch_filter[PATCH_FILTER_BITS / 64] = {};
++  u32 m_patch_min = 0xFFFFFFFFu;
++  u32 m_patch_max = 0;
++  void BuildRuntimePatchFilter();
++
+   u32 m_idle_pc = 0;
+ };
+ 
+diff --git a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_SMC.cpp b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_SMC.cpp
+index 491c57ef3a..57f647d22f 100644
+--- a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_SMC.cpp
++++ b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompCore_SMC.cpp
+@@ -8,6 +8,7 @@
+ #include "Common/Logging/Log.h"
+ #include <algorithm>
+ #include <cstdio>
++#include <cstdlib>
+ 
+ namespace
+ {
+@@ -95,7 +96,7 @@ void StaticRecompCore::RefreshRelSections()
+       continue;
+     if (m_chunk_state[i] == CHUNK_FAILED && m_failed_chunks != 0)
+       --m_failed_chunks;
+-    m_chunk_state[i] = CHUNK_UNVERIFIED;
++    SetChunkState(i, CHUNK_UNVERIFIED);
+     m_effective_chunk_hashes[i] = m_module->chunk_hashes[i];
+   }
+ }
+@@ -167,6 +168,32 @@ int StaticRecompCore::GetAddressLookupIndex(u32 address) const
+   return -1;
+ }
+ 
++void StaticRecompCore::SetChunkState(u32 index, u8 state)
++{
++  if (index >= m_chunk_state.size())
++    return;
++  m_chunk_state[index] = state;
++  if (m_chunk_valid_bytes.empty() || !m_module || index >= m_module->num_chunk_ranges)
++    return;
++  // Generated code only ever reads the byte at the chunk's start address.
++  const int slot = GetAddressLookupIndex(m_module->chunk_ranges[index].start);
++  if (slot >= 0 && slot < static_cast<int>(m_chunk_valid_bytes.size()))
++    m_chunk_valid_bytes[slot] = (state == CHUNK_VERIFIED) ? 1u : 0u;
++}
++
++void StaticRecompCore::RebuildChunkValidTable()
++{
++  if (m_chunk_valid_bytes.empty() || !m_module)
++    return;
++  std::fill(m_chunk_valid_bytes.begin(), m_chunk_valid_bytes.end(), u8{0});
++  for (u32 i = 0; i < m_module->num_chunk_ranges && i < m_chunk_state.size(); ++i)
++  {
++    const int slot = GetAddressLookupIndex(m_module->chunk_ranges[i].start);
++    if (slot >= 0 && slot < static_cast<int>(m_chunk_valid_bytes.size()))
++      m_chunk_valid_bytes[slot] = (m_chunk_state[i] == CHUNK_VERIFIED) ? 1u : 0u;
++  }
++}
++
+ void StaticRecompCore::InitLookupTable(u32 ram_size, u32 exram_size)
+ {
+   if (m_lookup_ram_size == ram_size && m_lookup_exram_size == exram_size)
+@@ -183,6 +210,7 @@ void StaticRecompCore::InitLookupTable(u32 ram_size, u32 exram_size)
+ 
+   u32 total_instructions = (ram_size + exram_size) >> 2;
+   m_chunk_lookup_table.assign(total_instructions, -1);
++  m_chunk_valid_bytes.assign(total_instructions, u8{0});
+ 
+   for (u32 i = 0; i < m_module->num_chunk_ranges; ++i)
+   {
+@@ -236,6 +264,88 @@ bool StaticRecompCore::DispatchableAt(u32 address)
+ }
+ 
+ bool StaticRecompCore::IsForcedFallbackAddress(u32 address) const
++{
++  // Native LLVM ranges are split on every reviewed runtime patch address.
++  // Execute that one live instruction through Dolphin's invalidation-aware
++  // JIT so relocated branches and staged loader rewrites always use the word
++  // currently present in guest RAM. The surrounding large ranges remain
++  // statically recompiled.
++  return IsRuntimePatchAddress(address) || IsConfiguredFallbackAddress(address);
++}
++
++// Tried 2026-08-14 and reverted as not worth the complexity: replacing this
++// search with a direct bitmap (one bit per 4-byte guest instruction, ~113 KB for
++// Sunshine's text span).
++//
++// The identification was right -- profiling confirmed this lower_bound is real
++// and hot, and the bitmap dropped its 4 KB page from 21.9% to 7.7% of chassis
++// time. But the surrounding inlined dispatch loop barely moved, 39.1% -> 35.2%
++// of chassis, so this search is a small part of that loop rather than a
++// standalone cost. End-to-end speed was indistinguishable from this version
++// (both ~61% under equal load), so the added state buys nothing measurable.
++//
++// Note 295 patches x 16 bytes is only 4.7 KB: the search stays in L1 and its
++// branches predict well, whereas a 113 KB bitmap misses to L2 on nearly every
++// dispatch. If revisited, the structure has to stay L1-sized -- e.g. a ~1 KB
++// hashed prefilter answering the overwhelmingly common "not a patch" case and
++// deferring here on a hit. A large direct-indexed table is the wrong shape,
++// unlike in DolRecomp's dispatch.c where it replaced 326 sequential range tests.
++//
++// 2026-08-17: took that prescription, and it worked. The table is now 670
++// entries (10.7 KB, ~10 branch levels), and PGO shrank the module enough that
++// the chassis is 30.1% of runtime, so the same absolute cost is a larger share
++// than when the bitmap was measured at ~61% speed. The prefilter below is 1 KB
++// -- 16 cache lines -- and answers the "not patched" case outright.
++//
++// Chassis-only A/B against one fixed PGO module, 6 pairs: +2.73 points mean,
++// 6 of 6 pairs, base 90.83 -> 93.57. The range test earns much of that on its
++// own: patches span only 0x80005624..0x8031E7C8, so dispatches into Eclipse's
++// injected code (0x8043A000, 0x804D0000-0x8055F000) reject on one compare.
++// Measured 7.83% of queries reach the lower_bound, 0 false negatives.
++bool StaticRecompCore::IsRuntimePatchAddress(u32 address) const
++{
++  // Definitive misses, cheapest first. Both tests are conservative: they can
++  // only reject an address the exact search would also reject.
++  if (address < m_patch_min || address > m_patch_max)
++    return false;
++  const u32 bit = PatchFilterBit(address);
++  if ((m_patch_filter[bit >> 6] & (u64{1} << (bit & 63))) == 0)
++    return false;
++
++  if (m_module && m_module->num_word_patches != 0)
++  {
++    const auto* begin = m_module->word_patches;
++    const auto* end = begin + m_module->num_word_patches;
++    const auto* patch = std::lower_bound(begin, end, address,
++                                         [](const StaticRecompWordPatch& item, u32 value) {
++                                           return item.address < value;
++                                         });
++    if (patch != end && patch->address == address)
++      return true;
++  }
++  return false;
++}
++
++void StaticRecompCore::BuildRuntimePatchFilter()
++{
++  std::fill(std::begin(m_patch_filter), std::end(m_patch_filter), u64{0});
++  m_patch_min = 0xFFFFFFFFu;
++  m_patch_max = 0;
++
++  if (!m_module || m_module->num_word_patches == 0)
++    return;  // min > max, so every address rejects on the range test.
++
++  for (u32 i = 0; i < m_module->num_word_patches; ++i)
++  {
++    const u32 address = m_module->word_patches[i].address;
++    const u32 bit = PatchFilterBit(address);
++    m_patch_filter[bit >> 6] |= u64{1} << (bit & 63);
++    m_patch_min = std::min(m_patch_min, address);
++    m_patch_max = std::max(m_patch_max, address);
++  }
++}
++
++bool StaticRecompCore::IsConfiguredFallbackAddress(u32 address) const
+ {
+   for (const StaticRecompRange& range : m_forced_fallback_ranges)
+   {
+@@ -292,19 +402,69 @@ void StaticRecompCore::VerifyChunk(u32 index)
+ 
+   if (runtime_start < 0x80000000u || offset >= ram_size || length > ram_size - offset)
+   {
+-    m_chunk_state[index] = CHUNK_FAILED;
++    SetChunkState(index, CHUNK_FAILED);
+     ++m_failed_chunks;
+     ERROR_LOG_FMT(POWERPC, "StaticRecomp: chunk [0x{:08X},0x{:08X}) outside guest RAM",
+                   chunk.start, chunk.end);
+     return;
+   }
+ 
+-  // FNV-1a 64, matching gen_module_tables.py.
++  // A zero module hash explicitly marks a mixed code/data chunk as mutable.
++  // These chunks remain dispatchable, but their loader tables or runtime bytes
++  // are intentionally excluded from the SMC hash check.
++  if (m_module->chunk_hashes[index] == 0)
++  {
++    SetChunkState(index, CHUNK_VERIFIED);
++    return;
++  }
++
++  // FNV-1a 64, matching gen_module_tables.py. Known game-specific runtime
++  // instruction patches are normalized to their original word. Generated
++  // code explicitly models both accepted words, so applying a reviewed patch
++  // does not retire an otherwise valid native chunk.
+   const u8* bytes = memory.GetRAM() + offset;
+   u64 hash = 0xCBF29CE484222325ull;
++  u32 patch_index = 0;
++  while (patch_index < m_module->num_word_patches &&
++         m_module->word_patches[patch_index].address + 4u <= chunk.start)
++  {
++    ++patch_index;
++  }
+   for (u32 i = 0; i < length; ++i)
+   {
+-    hash ^= bytes[i];
++    const u32 linked_address = chunk.start + i;
++    while (patch_index < m_module->num_word_patches &&
++           m_module->word_patches[patch_index].address + 4u <= linked_address)
++    {
++      ++patch_index;
++    }
++
++    u8 byte = bytes[i];
++    if (patch_index < m_module->num_word_patches)
++    {
++      const auto& patch = m_module->word_patches[patch_index];
++      if (linked_address >= patch.address && linked_address < patch.address + 4u)
++      {
++        const u32 patch_offset = patch.address - chunk.start;
++        const u32 actual = (static_cast<u32>(bytes[patch_offset]) << 24) |
++                           (static_cast<u32>(bytes[patch_offset + 1]) << 16) |
++                           (static_cast<u32>(bytes[patch_offset + 2]) << 8) |
++                           static_cast<u32>(bytes[patch_offset + 3]);
++        if (actual != patch.expected &&
++            (actual & patch.value_mask) != (patch.value & patch.value_mask))
++        {
++          SetChunkState(index, CHUNK_FAILED);
++          ++m_failed_chunks;
++          std::fprintf(stderr,
++                       "[staticrecomp] patch 0x%08X has unknown word 0x%08X; fallback JIT\n",
++                       patch.address, actual);
++          return;
++        }
++        const u32 shift = 24u - (linked_address - patch.address) * 8u;
++        byte = static_cast<u8>(patch.expected >> shift);
++      }
++    }
++    hash ^= byte;
+     hash *= 0x100000001B3ull;
+   }
+ 
+@@ -313,19 +473,53 @@ void StaticRecompCore::VerifyChunk(u32 index)
+ 
+   if (hash == m_effective_chunk_hashes[index])
+   {
+-    m_chunk_state[index] = CHUNK_VERIFIED;
++    SetChunkState(index, CHUNK_VERIFIED);
+   }
+   else
+   {
+-    m_chunk_state[index] = CHUNK_FAILED;
++    SetChunkState(index, CHUNK_FAILED);
+     ++m_failed_chunks;
++    // Opt-in diagnostic for classifying a newly observed mutable chunk. The
++    // complete guest image is emitted once at the point of failure so it can
++    // be compared byte-for-byte with the source DOL; normal runs pay only a
++    // cached environment check and never print game data.
++    static const bool trace_smc_bytes = std::getenv("STATICRECOMP_TRACE_SMC_BYTES") != nullptr;
++    if (trace_smc_bytes)
++    {
++      std::fprintf(stderr, "[staticrecomp] SMC bytes begin 0x%08X length=0x%X\n", chunk.start,
++                   length);
++      for (u32 i = 0; i < length; i += 16)
++      {
++        std::fprintf(stderr, "[staticrecomp] SMC bytes %08X:", chunk.start + i);
++        for (u32 j = 0; j < 16 && i + j < length; ++j)
++          std::fprintf(stderr, "%02X", bytes[i + j]);
++        std::fputc('\n', stderr);
++      }
++      std::fprintf(stderr, "[staticrecomp] SMC bytes end 0x%08X\n", chunk.end);
++    }
++    if (const char* dump_directory = std::getenv("STATICRECOMP_DUMP_SMC_DIR"))
++    {
++      char dump_path[1024];
++      const int written = std::snprintf(dump_path, sizeof(dump_path), "%s\\chunk_%08X.bin",
++                                        dump_directory, chunk.start);
++      if (written > 0 && written < static_cast<int>(sizeof(dump_path)))
++      {
++        if (FILE* dump = std::fopen(dump_path, "wb"))
++        {
++          std::fwrite(bytes, 1, length, dump);
++          std::fclose(dump);
++        }
++      }
++    }
++    if (m_fallback_jit)
++      m_fallback_jit->GetBlockCache()->InvalidateICache(runtime_start, length, true);
+     std::fprintf(stderr,
+-                 "[staticrecomp] SMC: chunk [0x%08X,0x%08X) hash mismatch; interpreter until "
+-                 "next invalidation (%u failed)\n",
++                 "[staticrecomp] SMC: chunk [0x%08X,0x%08X) hash mismatch; fallback JIT until "
++                 "explicit cache clear or REL remap (%u failed)\n",
+                  chunk.start, chunk.end, m_failed_chunks);
+     WARN_LOG_FMT(POWERPC,
+                  "StaticRecomp: chunk [0x{:08X},0x{:08X}) failed verification (guest code "
+-                 "differs from module); interpreter until next invalidation",
++                 "differs from module); fallback JIT until explicit cache clear or REL remap",
+                  chunk.start, chunk.end);
+   }
+ }
+@@ -362,11 +556,17 @@ void StaticRecompCore::OnICacheInvalidate(u32 address, u32 length)
+     if (chunk.start > last)
+       break;
+ 
++    // A chunk that has already failed verification stays on the invalidation-
++    // aware fallback JIT for this run. Re-invalidating the same patched code
++    // cannot make the generated native block valid again, and repeatedly
++    // hashing/logging it only adds startup cost. ClearCache or a discovered REL
++    // remap explicitly resets this state when a fresh verification is useful.
++    if (m_chunk_state[i] == CHUNK_FAILED)
++      continue;
++
+     if (m_chunk_state[i] != CHUNK_UNVERIFIED)
+     {
+-      if (m_chunk_state[i] == CHUNK_FAILED)
+-        --m_failed_chunks;
+-      m_chunk_state[i] = CHUNK_UNVERIFIED;
++      SetChunkState(i, CHUNK_UNVERIFIED);
+       ++m_reverify_events;
+     }
+   }
+diff --git a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompLockstep.cpp b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompLockstep.cpp
+index 59720d0ef7..57b8b07fa4 100644
+--- a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompLockstep.cpp
++++ b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompLockstep.cpp
+@@ -35,11 +35,12 @@ StaticRecompLockstepVerifier::~StaticRecompLockstepVerifier()
+   {
+     std::fprintf(stderr,
+                  "[lockstep] summary: checks=%llu reports=%llu skipped_fallback=%llu "
+-                 "skipped_zero=%llu undercharges=%llu max_deficit=%lld distinct_pcs=%zu\n",
++                 "skipped_zero=%llu cap_hits=%llu undercharges=%llu max_deficit=%lld "
++                 "distinct_pcs=%zu\n",
+                  (unsigned long long)m_ls_checks, (unsigned long long)m_ls_reports,
+                  (unsigned long long)m_ls_skipped_fallback, (unsigned long long)m_ls_skipped_zero,
+-                 (unsigned long long)m_ls_undercharges, (long long)m_ls_max_undercharge,
+-                 m_ls_checked.size());
++                 (unsigned long long)m_ls_cap_hits, (unsigned long long)m_ls_undercharges,
++                 (long long)m_ls_max_undercharge, m_ls_checked.size());
+     if (m_set_mem_journal)
+       m_set_mem_journal(nullptr, nullptr);
+   }
+diff --git a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompLockstep.h b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompLockstep.h
+index 4982f2ffaa..18f0895ec2 100644
+--- a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompLockstep.h
++++ b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompLockstep.h
+@@ -145,9 +145,15 @@ private:
+   u64 m_ls_start = 0;             // begin checking at this native-dispatch index
+   u64 m_ls_limit = 0;            // stop checking after this index (0 = no bound)
+   u64 m_ls_max_report = 0;      // cap divergence reports (0 = unlimited)
+-  int m_ls_step_cap = 512;      // interpreter single-steps before giving up on end PC
++  // Interpreter single-steps before giving up on end PC. 512 was far too low
++  // and made the default run misleading in BOTH directions: it manufactured
++  // 609 CTRLFLOW "divergences" that were only the shadow running out of steps,
++  // and it hid ~159 real FP divergences sitting past the cap. Measured at
++  // 20000: CTRLFLOW 631 -> 22, FP-only 463 -> 622.
++  int m_ls_step_cap = 20000;
+   u64 m_ls_checks = 0;          // distinct blocks differentially checked
+   u64 m_ls_reports = 0;         // divergences reported
++  u64 m_ls_cap_hits = 0;        // gave up on end PC at the step cap -- NOT a divergence
+   u64 m_ls_skipped_fallback = 0;  // blocks skipped (native used instruction fallback)
+   u64 m_ls_skipped_zero = 0;      // blocks skipped (zero cycle charge: no alignable work)
+   u64 m_ls_undercharges = 0;      // blocks regs-exact but native undercharged downcount (D3)
+diff --git a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompLockstep_Check.cpp b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompLockstep_Check.cpp
+index 6e72cb5eab..263223ff8a 100644
+--- a/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompLockstep_Check.cpp
++++ b/Source/Core/Core/PowerPC/StaticRecomp/StaticRecompLockstep_Check.cpp
+@@ -163,6 +163,15 @@ void StaticRecompLockstepVerifier::LockstepCheck(u32 entry_pc, u32 end_pc, const
+   int steps = 0;
+   s64 interp_cycles = 0;
+   const bool end_is_loop_header = LsIsLoopHeader(ram, ram_size, end_pc);
++  // Upstream RecompCore d3c97600ba makes the shadow run past the first arrival
++  // at a loop header until it has matched the native block's charge, because a
++  // generated chunk leaves an inlined loop on a timing-determined cycle budget.
++  // NOT PORTED, and do not re-port it: -FunctionRanges ends ranges at function
++  // boundaries rather than inlined loop headers, so this tree reports zero
++  // loop-header undercharges and the fix has nothing to correct. Measured, it
++  // was a net negative -- CTRLFLOW reports rose 555 -> 635 (+14%), because a
++  // loop that exits earlier than the native charge predicts never returns to
++  // end_pc and runs to the step cap. See eclipse-lockstep-artefacts.
+   while (steps < m_ls_step_cap)
+   {
+     const u32 before = ppc.pc;
+@@ -194,6 +203,14 @@ void StaticRecompLockstepVerifier::LockstepCheck(u32 entry_pc, u32 end_pc, const
+   StaticRecompLockstep::g_tb_override_active = false;
+ 
+   const bool reached = (ppc.pc == end_pc && ppc.Exceptions == 0);
++  // Running out of steps is the shadow giving up, not the module diverging.
++  // Counting it as CTRLFLOW made the default run report hundreds of faults
++  // that no codegen change could ever fix. Count it separately and say nothing.
++  if (!reached && ppc.Exceptions == 0 && steps >= m_ls_step_cap)
++  {
++    ++m_ls_cap_hits;
++    return;
++  }
+   const bool undercharged = reached && (interp_cycles > native_charge + LS_UNDERCHARGE_GRACE) && !end_is_loop_header;
+ 
+   std::string diff;
